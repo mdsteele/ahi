@@ -306,6 +306,27 @@ impl Image {
         }
     }
 
+    /// Draws pixels from `src` onto this image, placing the top-left corner of
+    /// `src` at coordinates `(x, y)`.
+    pub fn draw(&mut self, src: &Image, x: i32, y: i32) {
+        let src_start_row = min(max(0, -y) as u32, src.height);
+        let src_start_col = min(max(0, -x) as u32, src.width);
+        let dest_start_row = min(max(0, y) as u32, self.height);
+        let dest_start_col = min(max(0, x) as u32, self.width);
+        let num_rows = min(src.height - src_start_row,
+                           self.height - dest_start_row);
+        let num_cols = min(src.width - src_start_col,
+                           self.width - dest_start_col);
+        for row in 0..num_rows {
+            for col in 0..num_cols {
+                let color = src[(src_start_col + col, src_start_row + row)];
+                if color != Color::Transparent {
+                    self[(dest_start_col + col, dest_start_row + row)] = color;
+                }
+            }
+        }
+    }
+
     /// Returns a copy of the image that has been flipped horizontally.
     pub fn flip_horz(&self) -> Image {
         let mut pixels = Vec::with_capacity(self.pixels.len());
@@ -527,5 +548,30 @@ mod tests {
                      00000\n\
                      00333\n\
                      00333\n" as &[u8]);
+    }
+
+    #[test]
+    fn draw_overlapping() {
+        let input: &[u8] = b"ahi0 w5 h3 n2\n\
+                             \n\
+                             EEEEE\n\
+                             EEEEE\n\
+                             EEEEE\n\
+                             \n\
+                             01110\n\
+                             11011\n\
+                             01110\n";
+        let images = Image::read_all(input).expect("failed to read images");
+        let mut image = images[0].clone();
+        image.draw(&images[1], -1, 1);
+        let mut output = Vec::<u8>::new();
+        Image::write_all(&mut output, &[image])
+            .expect("failed to write image");
+        assert_eq!(&output as &[u8],
+                   b"ahi0 w5 h3 n1\n\
+                     \n\
+                     EEEEE\n\
+                     111EE\n\
+                     1E11E\n" as &[u8]);
     }
 }
