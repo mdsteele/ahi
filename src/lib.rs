@@ -48,6 +48,7 @@
 
 #![warn(missing_docs)]
 
+use std::cmp::{max, min};
 use std::io::{self, Error, ErrorKind, Read, Write};
 
 /// Represents a pixel color for an ASCII Hex Image.
@@ -287,6 +288,24 @@ impl Image {
                           .into_boxed_slice();
     }
 
+    /// Sets all pixels in the specified rectangle to the given color.
+    pub fn fill_rect(&mut self,
+                     x: i32,
+                     y: i32,
+                     w: u32,
+                     h: u32,
+                     color: Color) {
+        let start_row = min(max(0, y) as u32, self.height);
+        let end_row = min(max(0, y + h as i32) as u32, self.height);
+        let start_col = min(max(0, x) as u32, self.width);
+        let end_col = min(max(0, x + w as i32) as u32, self.width);
+        for row in start_row..end_row {
+            for col in start_col..end_col {
+                self[(col, row)] = color;
+            }
+        }
+    }
+
     /// Returns a copy of the image that has been flipped horizontally.
     pub fn flip_horz(&self) -> Image {
         let mut pixels = Vec::with_capacity(self.pixels.len());
@@ -476,5 +495,37 @@ mod tests {
         let image = image.flip_vert();
         assert_eq!(image[(1, 0)], Color::Green);
         assert_eq!(image[(1, 1)], Color::Red);
+    }
+
+    #[test]
+    fn fill_contained_rect() {
+        let mut image = Image::new(5, 5);
+        image.fill_rect(1, 1, 2, 2, Color::Red);
+        let mut output = Vec::<u8>::new();
+        Image::write_all(&mut output, &[image])
+            .expect("failed to write image");
+        assert_eq!(&output as &[u8],
+                   b"ahi0 w5 h5 n1\n\
+                     \n\
+                     00000\n\
+                     03300\n\
+                     03300\n\
+                     00000\n\
+                     00000\n" as &[u8]);
+    }
+
+    #[test]
+    fn fill_overlapping_rect() {
+        let mut image = Image::new(5, 3);
+        image.fill_rect(2, 1, 7, 7, Color::Red);
+        let mut output = Vec::<u8>::new();
+        Image::write_all(&mut output, &[image])
+            .expect("failed to write image");
+        assert_eq!(&output as &[u8],
+                   b"ahi0 w5 h3 n1\n\
+                     \n\
+                     00000\n\
+                     00333\n\
+                     00333\n" as &[u8]);
     }
 }
