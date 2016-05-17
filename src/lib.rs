@@ -280,6 +280,46 @@ impl Image {
         }
         Ok(())
     }
+
+    /// Sets all pixels in the image to transparent.
+    pub fn clear(&mut self) {
+        self.pixels = vec![Color::Transparent; self.pixels.len()]
+                          .into_boxed_slice();
+    }
+
+    /// Returns a copy of the image that has been flipped horizontally.
+    pub fn flip_horz(&self) -> Image {
+        let mut pixels = Vec::with_capacity(self.pixels.len());
+        for row in 0..self.height {
+            let offset = row * self.width;
+            for col in 0..self.width {
+                let index = offset + self.width - col - 1;
+                pixels.push(self.pixels[index as usize]);
+            }
+        }
+        Image {
+            width: self.width,
+            height: self.height,
+            pixels: pixels.into_boxed_slice(),
+        }
+    }
+
+    /// Returns a copy of the image that has been flipped vertically.
+    pub fn flip_vert(&self) -> Image {
+        let mut pixels = Vec::with_capacity(self.pixels.len());
+        for row in 0..self.height {
+            let offset = (self.height - row - 1) * self.width;
+            for col in 0..self.width {
+                let index = offset + col;
+                pixels.push(self.pixels[index as usize]);
+            }
+        }
+        Image {
+            width: self.width,
+            height: self.height,
+            pixels: pixels.into_boxed_slice(),
+        }
+    }
 }
 
 impl std::ops::Index<(u32, u32)> for Image {
@@ -406,5 +446,35 @@ mod tests {
                      \n\
                      E0\n\
                      0E\n");
+    }
+
+    #[test]
+    fn clear_image() {
+        let mut image = Image::new(2, 2);
+        image[(1, 0)] = Color::DarkRed;
+        image[(1, 1)] = Color::Green;
+        image.clear();
+        assert_eq!(image[(1, 0)], Color::Transparent);
+        assert_eq!(image[(1, 1)], Color::Transparent);
+    }
+
+    #[test]
+    fn flip_image_horz() {
+        let mut image = Image::new(2, 2);
+        image[(0, 1)] = Color::Red;
+        image[(1, 1)] = Color::Green;
+        let image = image.flip_horz();
+        assert_eq!(image[(0, 1)], Color::Green);
+        assert_eq!(image[(1, 1)], Color::Red);
+    }
+
+    #[test]
+    fn flip_image_vert() {
+        let mut image = Image::new(2, 2);
+        image[(1, 0)] = Color::Red;
+        image[(1, 1)] = Color::Green;
+        let image = image.flip_vert();
+        assert_eq!(image[(1, 0)], Color::Green);
+        assert_eq!(image[(1, 1)], Color::Red);
     }
 }
