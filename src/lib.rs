@@ -10,7 +10,7 @@
 //! Here's what a typical .ahi file looks like:
 //!
 //! ```text
-//! ahi0 w14 h5 n2
+//! ahi0 w20 h5 n2
 //!
 //! 0000000000000FFF0000
 //! FFFFFFFFFFFFFF11FF00
@@ -27,9 +27,9 @@
 //!
 //! The start of the .ahi file is the _header line_, which has the form
 //! `ahi<version> w<width> h<height> n<num_images>`, where each of the four
-//! fields is a hexadecimal number.  So, the above file is AHI version 0
-//! (currently the only valid version), and contains two 20x5-pixel images (all
-//! the images in a single file must have the same dimensions).
+//! fields is a decimal number.  So, the above file is AHI version 0 (currently
+//! (the only valid version), and contains two 20x5-pixel images (all the
+//! images in a single file must have the same dimensions).
 //!
 //! After the header line comes the images, which are separated from the header
 //! line and from each other by double-newlines.  Each image has one text line
@@ -48,7 +48,7 @@
 
 #![warn(missing_docs)]
 
-use std::io::{self, Error, ErrorKind, Write};
+use std::io::{self, Error, ErrorKind, Read, Write};
 
 /// Represents a pixel color for an ASCII Hex Image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -138,6 +138,32 @@ impl Color {
             Color::White => b'F',
         }
     }
+
+    fn from_byte(byte: u8) -> io::Result<Color> {
+        match byte {
+            b'0' => Ok(Color::Transparent),
+            b'1' => Ok(Color::Black),
+            b'2' => Ok(Color::DarkRed),
+            b'3' => Ok(Color::Red),
+            b'4' => Ok(Color::DarkGreen),
+            b'5' => Ok(Color::Green),
+            b'6' => Ok(Color::DarkYellow),
+            b'7' => Ok(Color::Yellow),
+            b'8' => Ok(Color::DarkBlue),
+            b'9' => Ok(Color::Blue),
+            b'A' => Ok(Color::DarkMagenta),
+            b'B' => Ok(Color::Magenta),
+            b'C' => Ok(Color::DarkCyan),
+            b'D' => Ok(Color::Cyan),
+            b'E' => Ok(Color::Gray),
+            b'F' => Ok(Color::White),
+            _ => {
+                let msg = format!("invalid pixel character: '{}'",
+                                  String::from_utf8_lossy(&[byte]));
+                Err(Error::new(ErrorKind::InvalidData, msg))
+            }
+        }
+    }
 }
 
 /// Represents a single ASCII Hex Image.
@@ -183,8 +209,43 @@ impl Image {
         data
     }
 
-    /// Writes a group of images to a file.  Returns an error if the images
-    /// aren't all the same dimensions.
+    /// Reads a group of images from an AHI file.
+    pub fn read_all<R: Read>(mut reader: R) -> io::Result<Vec<Image>> {
+        try!(read_exactly(reader.by_ref(), b"ahi"));
+        let version = try!(read_header_int(reader.by_ref(), b' '));
+        if version != 0 {
+            let msg = format!("unsupported AHI version: {}", version);
+            return Err(Error::new(ErrorKind::InvalidData, msg));
+        }
+        try!(read_exactly(reader.by_ref(), b"w"));
+        let width = try!(read_header_int(reader.by_ref(), b' '));
+        try!(read_exactly(reader.by_ref(), b"h"));
+        let height = try!(read_header_int(reader.by_ref(), b' '));
+        try!(read_exactly(reader.by_ref(), b"n"));
+        let num_images = try!(read_header_int(reader.by_ref(), b'\n'));
+        let mut images = Vec::with_capacity(num_images as usize);
+        let mut row_buffer = vec![0u8; width as usize];
+        for _ in 0..num_images {
+            try!(read_exactly(reader.by_ref(), b"\n"));
+            let mut pixels = Vec::with_capacity((width * height) as usize);
+            for _ in 0..height {
+                try!(reader.read_exact(&mut row_buffer));
+                for &byte in &row_buffer {
+                    pixels.push(try!(Color::from_byte(byte)));
+                }
+                try!(read_exactly(reader.by_ref(), b"\n"));
+            }
+            images.push(Image {
+                width: width,
+                height: height,
+                pixels: pixels.into_boxed_slice(),
+            })
+        }
+        Ok(images)
+    }
+
+    /// Writes a group of images to an AHI file.  Returns an error if the
+    /// images aren't all the same dimensions.
     pub fn write_all<W: Write>(mut writer: W,
                                images: &[Image])
                                -> io::Result<()> {
@@ -194,7 +255,7 @@ impl Image {
             (images[0].width, images[0].height)
         };
         try!(write!(writer,
-                    "ahi0 w{:X} h{:X} n{:X}\n",
+                    "ahi0 w{} h{} n{}\n",
                     width,
                     height,
                     images.len()));
@@ -242,6 +303,45 @@ impl std::ops::IndexMut<(u32, u32)> for Image {
     }
 }
 
+fn read_exactly<R: Read>(mut reader: R, expected: &[u8]) -> io::Result<()> {
+    let mut actual = vec![0u8; expected.len()];
+    try!(reader.read_exact(&mut actual));
+    if &actual as &[u8] != expected {
+        let msg = format!("expected '{}', found '{}'",
+                          String::from_utf8_lossy(expected),
+                          String::from_utf8_lossy(&actual));
+        Err(Error::new(ErrorKind::InvalidData, msg))
+    } else {
+        Ok(())
+    }
+}
+
+const MAX_HEADER_VALUE: u32 = 0xFFFF;
+
+fn read_header_int<R: Read>(reader: R, terminator: u8) -> io::Result<u32> {
+    let mut value: u32 = 0;
+    for next in reader.bytes() {
+        let byte = try!(next);
+        if byte == terminator {
+            break;
+        }
+        let digit: u8;
+        if b'0' <= byte && byte <= b'9' {
+            digit = byte - b'0';
+        } else {
+            let msg = format!("invalid character in header field: '{}'",
+                              String::from_utf8_lossy(&[byte]));
+            return Err(Error::new(ErrorKind::InvalidData, msg));
+        }
+        value = value * 10 + digit as u32;
+        if value > MAX_HEADER_VALUE {
+            let msg = "header value is too large";
+            return Err(Error::new(ErrorKind::InvalidData, msg));
+        }
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,6 +355,28 @@ mod tests {
         assert_eq!(image.rgba_data(),
                    vec![127, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255, 0, 255,
                         255, 255]);
+    }
+
+    #[test]
+    fn read_zero_images() {
+        let input: &[u8] = b"ahi0 w0 h0 n0";
+        let images = Image::read_all(input).expect("failed to read images");
+        assert_eq!(images.len(), 0);
+    }
+
+    #[test]
+    fn read_two_images() {
+        let input: &[u8] = b"ahi0 w2 h2 n2\n\
+                             \n\
+                             20\n\
+                             5D\n\
+                             \n\
+                             E0\n\
+                             0E\n";
+        let images = Image::read_all(input).expect("failed to read images");
+        assert_eq!(images.len(), 2);
+        assert_eq!(images[0][(0, 1)], Color::Green);
+        assert_eq!(images[1][(0, 0)], Color::Gray);
     }
 
     #[test]
