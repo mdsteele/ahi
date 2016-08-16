@@ -379,6 +379,39 @@ impl Image {
             pixels: pixels.into_boxed_slice(),
         }
     }
+
+    /// Returns a copy of the image that has been rotated 90 degrees clockwise.
+    pub fn rotate_cw(&self) -> Image {
+        let mut pixels = Vec::with_capacity(self.pixels.len());
+        for row in 0..self.width {
+            for col in 0..self.height {
+                let index = self.width * (self.height - col - 1) + row;
+                pixels.push(self.pixels[index as usize]);
+            }
+        }
+        Image {
+            width: self.height,
+            height: self.width,
+            pixels: pixels.into_boxed_slice(),
+        }
+    }
+
+    /// Returns a copy of the image that has been rotated 90 degrees
+    /// counterclockwise.
+    pub fn rotate_ccw(&self) -> Image {
+        let mut pixels = Vec::with_capacity(self.pixels.len());
+        for row in 0..self.width {
+            for col in 0..self.height {
+                let index = self.width * col + (self.width - row - 1);
+                pixels.push(self.pixels[index as usize]);
+            }
+        }
+        Image {
+            width: self.height,
+            height: self.width,
+            pixels: pixels.into_boxed_slice(),
+        }
+    }
 }
 
 impl std::ops::Index<(u32, u32)> for Image {
@@ -535,6 +568,30 @@ mod tests {
         let image = image.flip_vert();
         assert_eq!(image[(1, 0)], Color::Green);
         assert_eq!(image[(1, 1)], Color::Red);
+    }
+
+    #[test]
+    fn rotate_image_cw() {
+        let mut image = Image::new(4, 2);
+        image[(1, 0)] = Color::Red;
+        image[(1, 1)] = Color::Green;
+        let image = image.rotate_cw();
+        assert_eq!(2, image.width());
+        assert_eq!(4, image.height());
+        assert_eq!(image[(1, 1)], Color::Red);
+        assert_eq!(image[(0, 1)], Color::Green);
+    }
+
+    #[test]
+    fn rotate_image_ccw() {
+        let mut image = Image::new(4, 2);
+        image[(1, 0)] = Color::Red;
+        image[(1, 1)] = Color::Green;
+        let image = image.rotate_ccw();
+        assert_eq!(2, image.width());
+        assert_eq!(4, image.height());
+        assert_eq!(image[(0, 2)], Color::Red);
+        assert_eq!(image[(1, 2)], Color::Green);
     }
 
     #[test]
