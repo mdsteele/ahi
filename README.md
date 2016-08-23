@@ -1,6 +1,9 @@
 # ahi
 
-Rust library for encoding/decoding ASCII Hex Image (.ahi) files.
+Rust library for encoding/decoding ASCII Hex Image (.ahi) and ASCII Hex Font
+(.ahf) files.
+
+## The AHI format
 
 ASCII Hex Image (AHI) is a simple text-based format for storing collections of
 small, 16-color images.  It is intended for storing sprites for games or other
@@ -23,6 +26,43 @@ FFFFFFFFFFFFFF11FF00
 FF11111111111111111F
 00FF11FFFFFFFFFFFFFF
 0000FFF0000000000000
+```
+
+The top-level crate documentation has more details about the format spec.
+
+## The AHF format
+
+ASCII Hex Font (AHF) is a variation on the AHI file format, meant for storing
+16-color bitmap fonts as an ASCII text file.
+
+A typical .ahf file looks like this:
+
+```text
+ahf0 h6 b5 n2
+
+def w4 s5
+1111
+1001
+1001
+1001
+1001
+1111
+
+'A' w5 s6
+01110
+10001
+11111
+10001
+10001
+00000
+
+'g' w4 s5
+0000
+0111
+1001
+0111
+0001
+0110
 ```
 
 The top-level crate documentation has more details about the format spec.

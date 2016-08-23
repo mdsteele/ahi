@@ -17,7 +17,8 @@
 // | with AHI.  If not, see <http://www.gnu.org/licenses/>.                   |
 // +--------------------------------------------------------------------------+
 
-//! A library for encoding/decoding ASCII Hex Image (.ahi) files.
+//! A library for encoding/decoding ASCII Hex Image (.ahi) and ASCII Hex Font
+//! (.ahf) files.
 //!
 //! # The AHI format
 //!
@@ -47,7 +48,7 @@
 //! The start of the .ahi file is the _header line_, which has the form
 //! `ahi<version> w<width> h<height> n<num_images>`, where each of the four
 //! fields is a decimal number.  So, the above file is AHI version 0 (currently
-//! (the only valid version), and contains two 20x5-pixel images (all the
+//! the only valid version), and contains two 20x5-pixel images (all the
 //! images in a single file must have the same dimensions).
 //!
 //! After the header line comes the images, which are separated from the header
@@ -64,11 +65,70 @@
 //! (`1 = 0b0001`) and "half-brightness black" (`0 = 0b0000`) would be the same
 //! color, instead color `0` is special-cased to be transparent (and color `1`
 //! is black).
+//!
+//! # The AHF format
+//!
+//! ASCII Hex Font (AHF) is a variation on the AHI file format, meant for
+//! storing 16-color bitmap fonts as an ASCII text file.
+//!
+//! Here's what a typical .ahf file looks like:
+//!
+//! ```text
+//! ahf0 h6 b5 n2
+//!
+//! def w4 s5
+//! 1111
+//! 1001
+//! 1001
+//! 1001
+//! 1001
+//! 1111
+//!
+//! 'A' w5 s6
+//! 01110
+//! 10001
+//! 11111
+//! 10001
+//! 10001
+//! 00000
+//!
+//! 'g' w4 s5
+//! 0000
+//! 0111
+//! 1001
+//! 0111
+//! 0001
+//! 0110
+//! ```
+//!
+//! The start of the .ahf file is the _header line_, which has the form
+//! `ahf<version> h<height> b<baseline> n<num_glyphs>`, where each of the four
+//! fields is a decimal number.  So, the above file is AHF version 0 (currently
+//! the only valid version), and contains two 6-pixel high glyphs in addition
+//! to the default glyph, with a baseline height of 5 pixels from the top.
+//!
+//! After the header line comes the glyphs, which are separated from the header
+//! line and from each other by double-newlines.  Each glyph has a _subheader
+//! line_, followed by one text line per pixel row, with one hex digit per
+//! pixel.  Each pixel row line (including the last one in the file) must be
+//! terminated by a newline.
+//!
+//! Each glyph subheader line has the form `<char> w<width> s<spacing>`, where
+//! the `<char>` field is either `def` for the font's default glyph (which must
+//! be present, and must come first), or a single-quoted Rust character literal
+//! (e.g. `'g'` or `'\n'` or `'\u{2603}'`).  The spacing field gives the number
+//! of pixels between the left edge of that glyph and the left edge of the next
+//! glyph when printing a string.
+//!
+//! Color mapping of pixels works the same as for AHI files.
 
 #![warn(missing_docs)]
 
 use std::cmp::{max, min};
+use std::collections::BTreeMap;
 use std::io::{self, Error, ErrorKind, Read, Write};
+
+// ========================================================================= //
 
 /// Represents a pixel color for an ASCII Hex Image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -186,6 +246,8 @@ impl Color {
     }
 }
 
+// ========================================================================= //
+
 /// Represents a single ASCII Hex Image.
 #[derive(Clone)]
 pub struct Image {
@@ -232,17 +294,17 @@ impl Image {
     /// Reads a group of images from an AHI file.
     pub fn read_all<R: Read>(mut reader: R) -> io::Result<Vec<Image>> {
         try!(read_exactly(reader.by_ref(), b"ahi"));
-        let version = try!(read_header_int(reader.by_ref(), b' '));
+        let version = try!(read_header_uint(reader.by_ref(), b' '));
         if version != 0 {
             let msg = format!("unsupported AHI version: {}", version);
             return Err(Error::new(ErrorKind::InvalidData, msg));
         }
         try!(read_exactly(reader.by_ref(), b"w"));
-        let width = try!(read_header_int(reader.by_ref(), b' '));
+        let width = try!(read_header_uint(reader.by_ref(), b' '));
         try!(read_exactly(reader.by_ref(), b"h"));
-        let height = try!(read_header_int(reader.by_ref(), b' '));
+        let height = try!(read_header_uint(reader.by_ref(), b' '));
         try!(read_exactly(reader.by_ref(), b"n"));
-        let num_images = try!(read_header_int(reader.by_ref(), b'\n'));
+        let num_images = try!(read_header_uint(reader.by_ref(), b'\n'));
         let mut images = Vec::with_capacity(num_images as usize);
         let mut row_buffer = vec![0u8; width as usize];
         for _ in 0..num_images {
@@ -435,6 +497,241 @@ impl std::ops::IndexMut<(u32, u32)> for Image {
     }
 }
 
+// ========================================================================= //
+
+/// An image for a single character in a font, along with spacing information.
+#[derive(Clone)]
+pub struct Glyph {
+    image: Image,
+    spacing: i32,
+}
+
+impl Glyph {
+    /// Creates a new glyph with the given image and spacing.
+    pub fn new(image: Image, spacing: i32) -> Glyph {
+        Glyph {
+            image: image,
+            spacing: spacing,
+        }
+    }
+
+    /// Returns the image for this glyph.
+    pub fn image(&self) -> &Image {
+        &self.image
+    }
+
+    /// Returns a mutable reference to the image for this glyph.
+    pub fn image_mut(&mut self) -> &mut Image {
+        &mut self.image
+    }
+
+    /// Returns the spacing of this glyph, in pixels.  This is the distance
+    /// from the left edge of this glyph at which the next glyph in the text
+    /// should start, which may be slightly different than the width of this
+    /// glyph's image (e.g. if this is an italic glyph whose image should
+    /// extend a bit over that of the next glyph).
+    pub fn spacing(&self) -> i32 {
+        self.spacing
+    }
+
+    /// Sets the spacing for this glyph.
+    pub fn set_spacing(&mut self, spacing: i32) {
+        self.spacing = spacing;
+    }
+}
+
+// ========================================================================= //
+
+/// Represents a mapping from characters to glyphs.
+#[derive(Clone)]
+pub struct Font {
+    glyphs: BTreeMap<char, Glyph>,
+    default_glyph: Glyph,
+    baseline: i32,
+}
+
+impl Font {
+    /// Creates a new, empty font whose glyphs have the given height, in
+    /// pixels.  The initial default glyph will be a zero-width space, and the
+    /// initial baseline will be equal to the height.
+    pub fn with_glyph_height(height: u32) -> Font {
+        Font {
+            glyphs: BTreeMap::new(),
+            default_glyph: Glyph::new(Image::new(0, height), 0),
+            baseline: height as i32,
+        }
+    }
+
+    /// Returns the image height of the glyphs in this font, in pixels.
+    pub fn glyph_height(&self) -> u32 {
+        self.default_glyph.image.height()
+    }
+
+    /// Returns the baseline height for this font, measured in pixels down from
+    /// the top of the glyph.  The baseline is the line on which e.g. most
+    /// numerals and capital letters sit, and below which e.g. the tail on a
+    /// lowercase 'g' or 'y' extends.
+    pub fn baseline(&self) -> i32 {
+        self.baseline
+    }
+
+    /// Sets the baseline value for this font, measured in pixels down from the
+    /// top of the glyph.  It is customary for the baseline to be in the range
+    /// (0, `height`], but note that this is not actually required.
+    pub fn set_baseline(&mut self, baseline: i32) {
+        self.baseline = baseline;
+    }
+
+    /// Gets the glyph for the given character, if any.  If you instead want to
+    /// get the default glyph for characters that have no glyph, use the index
+    /// operator.
+    pub fn get_char_glyph(&self, chr: char) -> Option<&Glyph> {
+        self.glyphs.get(&chr)
+    }
+
+    /// Gets a mutable reference to the glyph for the given character, if any.
+    pub fn get_char_glyph_mut(&mut self, chr: char) -> Option<&mut Glyph> {
+        self.glyphs.get_mut(&chr)
+    }
+
+    /// Sets the glyph for the given character.  Panics if the new glyph's
+    /// height is not equal to the font's glyph height.
+    pub fn set_char_glyph(&mut self, chr: char, glyph: Glyph) {
+        assert_eq!(glyph.image().height(), self.glyph_height());
+        self.glyphs.insert(chr, glyph);
+    }
+
+    /// Removes the glyph for the given character from the font.  After calling
+    /// this, the font's default glyph will be used for this character.
+    pub fn remove_char_glyph(&mut self, chr: char) {
+        self.glyphs.remove(&chr);
+    }
+
+    /// Gets the default glyph for this font, which is used for characters that
+    /// don't have a glyph.
+    pub fn default_glyph(&self) -> &Glyph {
+        &self.default_glyph
+    }
+
+    /// Gets a mutable reference to the default glyph for this font.
+    pub fn default_glyph_mut(&mut self) -> &mut Glyph {
+        &mut self.default_glyph
+    }
+
+    /// Sets the default glyph for this font.  Panics if the new glyph's height
+    /// is not equal to the font's glyph height.
+    pub fn set_default_glyph(&mut self, glyph: Glyph) {
+        assert_eq!(glyph.image().height(), self.glyph_height());
+        self.default_glyph = glyph;
+    }
+
+    /// Reads a font from an AHF file.
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Font> {
+        try!(read_exactly(reader.by_ref(), b"ahf"));
+        let version = try!(read_header_uint(reader.by_ref(), b' '));
+        if version != 0 {
+            let msg = format!("unsupported AHF version: {}", version);
+            return Err(Error::new(ErrorKind::InvalidData, msg));
+        }
+        try!(read_exactly(reader.by_ref(), b"h"));
+        let height = try!(read_header_uint(reader.by_ref(), b' '));
+        try!(read_exactly(reader.by_ref(), b"b"));
+        let baseline = try!(read_header_int(reader.by_ref(), b' '));
+        try!(read_exactly(reader.by_ref(), b"n"));
+        let num_glyphs = try!(read_header_uint(reader.by_ref(), b'\n'));
+
+        try!(read_exactly(reader.by_ref(), b"\ndef "));
+        let default_glyph = try!(Font::read_glyph(reader.by_ref(), height));
+
+        let mut glyphs = BTreeMap::new();
+        for _ in 0..num_glyphs {
+            try!(read_exactly(reader.by_ref(), b"\n'"));
+            let chr = try!(read_char_escape(reader.by_ref()));
+            try!(read_exactly(reader.by_ref(), b"' "));
+            let glyph = try!(Font::read_glyph(reader.by_ref(), height));
+            glyphs.insert(chr, glyph);
+        }
+        Ok(Font {
+            glyphs: glyphs,
+            default_glyph: default_glyph,
+            baseline: baseline,
+        })
+    }
+
+    fn read_glyph<R: Read>(mut reader: R, height: u32) -> io::Result<Glyph> {
+        try!(read_exactly(reader.by_ref(), b"w"));
+        let width = try!(read_header_uint(reader.by_ref(), b' '));
+        try!(read_exactly(reader.by_ref(), b"s"));
+        let spacing = try!(read_header_int(reader.by_ref(), b'\n'));
+        let mut row_buffer = vec![0u8; width as usize];
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        for _ in 0..height {
+            try!(reader.read_exact(&mut row_buffer));
+            for &byte in &row_buffer {
+                pixels.push(try!(Color::from_byte(byte)));
+            }
+            try!(read_exactly(reader.by_ref(), b"\n"));
+        }
+        let image = Image {
+            width: width,
+            height: height,
+            pixels: pixels.into_boxed_slice(),
+        };
+        Ok(Glyph {
+            image: image,
+            spacing: spacing,
+        })
+    }
+
+    /// Writes the font to an AHF file.
+    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        let height = self.glyph_height();
+        try!(write!(writer,
+                    "ahf0 h{} b{} n{}\n",
+                    height,
+                    self.baseline(),
+                    self.glyphs.len()));
+        try!(write!(writer, "\ndef "));
+        try!(Font::write_glyph(writer.by_ref(), &self.default_glyph));
+        for (chr, glyph) in self.glyphs.iter() {
+            let escaped: String = chr.escape_default().collect();
+            try!(write!(writer, "\n'{}' ", escaped));
+            try!(Font::write_glyph(writer.by_ref(), glyph));
+        }
+        Ok(())
+    }
+
+    fn write_glyph<W: Write>(mut writer: W, glyph: &Glyph) -> io::Result<()> {
+        let image = glyph.image();
+        let width = image.width();
+        let height = image.height();
+        try!(write!(writer, "w{} s{}\n", width, glyph.spacing()));
+        for row in 0..height {
+            for col in 0..width {
+                let color = image[(col, row)];
+                try!(writer.write_all(&[color.to_byte()]));
+            }
+            try!(write!(writer, "\n"));
+        }
+        Ok(())
+    }
+}
+
+impl std::ops::Index<char> for Font {
+    type Output = Glyph;
+    fn index(&self, index: char) -> &Glyph {
+        self.glyphs.get(&index).unwrap_or(&self.default_glyph)
+    }
+}
+
+impl std::ops::IndexMut<char> for Font {
+    fn index_mut(&mut self, index: char) -> &mut Glyph {
+        self.glyphs.get_mut(&index).unwrap_or(&mut self.default_glyph)
+    }
+}
+
+// ========================================================================= //
+
 fn read_exactly<R: Read>(mut reader: R, expected: &[u8]) -> io::Result<()> {
     let mut actual = vec![0u8; expected.len()];
     try!(reader.read_exact(&mut actual));
@@ -448,31 +745,120 @@ fn read_exactly<R: Read>(mut reader: R, expected: &[u8]) -> io::Result<()> {
     }
 }
 
-const MAX_HEADER_VALUE: u32 = 0xFFFF;
+fn read_char_escape<R: Read>(mut reader: R) -> io::Result<char> {
+    let mut buffer = vec![0u8];
+    try!(reader.read_exact(&mut buffer));
+    let byte = buffer[0];
+    if byte == b'\\' {
+        try!(reader.read_exact(&mut buffer));
+        let esc = buffer[0];
+        if esc == b'n' {
+            Ok('\n')
+        } else if esc == b'r' {
+            Ok('\r')
+        } else if esc == b't' {
+            Ok('\t')
+        } else if esc == b'u' {
+            try!(read_exactly(reader.by_ref(), b"{"));
+            let value = try!(read_hex_u32(reader.by_ref(), b'}'));
+            std::char::from_u32(value).ok_or_else(|| {
+                let msg = format!("invalid unicode value: {}", value);
+                Error::new(ErrorKind::InvalidData, msg)
+            })
+        } else {
+            let msg = format!("invalid char escape: {}", esc);
+            Err(Error::new(ErrorKind::InvalidData, msg))
+        }
+    } else if byte < b' ' || byte > b'~' || byte == b'\'' {
+        let msg = format!("invalid char literal byte: {}", byte);
+        Err(Error::new(ErrorKind::InvalidData, msg))
+    } else {
+        Ok(std::char::from_u32(byte as u32).unwrap())
+    }
+}
 
-fn read_header_int<R: Read>(reader: R, terminator: u8) -> io::Result<u32> {
+const MAX_HEADER_VALUE: i32 = 0xFFFF;
+
+fn read_header_int<R: Read>(reader: R, terminator: u8) -> io::Result<i32> {
+    let mut negative = false;
+    let mut any_digits = false;
+    let mut value: i32 = 0;
+    for next in reader.bytes() {
+        let byte = try!(next);
+        if byte == terminator {
+            if !any_digits {
+                let msg = "missing integer field in header";
+                return Err(Error::new(ErrorKind::InvalidData, msg));
+            }
+            break;
+        } else if byte == b'-' {
+            if negative || any_digits {
+                let msg = "misplaced minus sign in header field";
+                return Err(Error::new(ErrorKind::InvalidData, msg));
+            }
+            negative = true;
+        } else if byte < b'0' || byte > b'9' {
+            let msg = format!("invalid byte in header field: '{}'",
+                              String::from_utf8_lossy(&[byte]));
+            return Err(Error::new(ErrorKind::InvalidData, msg));
+        } else {
+            value = value * 10 + (byte - b'0') as i32;
+            if value > MAX_HEADER_VALUE {
+                let msg = "header value is too large";
+                return Err(Error::new(ErrorKind::InvalidData, msg));
+            }
+            any_digits = true;
+        }
+    }
+    if negative {
+        value = -value;
+    }
+    Ok(value)
+}
+
+fn read_header_uint<R: Read>(reader: R, terminator: u8) -> io::Result<u32> {
+    let value = try!(read_header_int(reader, terminator));
+    if value < 0 {
+        let msg = format!("value must be nonnegative (was {})", value);
+        return Err(Error::new(ErrorKind::InvalidData, msg));
+    }
+    Ok(value as u32)
+}
+
+fn read_hex_u32<R: Read>(reader: R, terminator: u8) -> io::Result<u32> {
+    let mut any_digits = false;
     let mut value: u32 = 0;
     for next in reader.bytes() {
         let byte = try!(next);
         if byte == terminator {
+            if !any_digits {
+                let msg = "missing hex literal";
+                return Err(Error::new(ErrorKind::InvalidData, msg));
+            }
             break;
         }
-        let digit: u8;
-        if b'0' <= byte && byte <= b'9' {
-            digit = byte - b'0';
+        let digit = if byte >= b'0' && byte <= b'9' {
+            byte - b'0'
+        } else if byte >= b'a' && byte <= b'f' {
+            byte - b'a' + 0xa
+        } else if byte >= b'A' && byte <= b'F' {
+            byte - b'A' + 0xA
         } else {
-            let msg = format!("invalid character in header field: '{}'",
+            let msg = format!("invalid hex digit: '{}'",
                               String::from_utf8_lossy(&[byte]));
             return Err(Error::new(ErrorKind::InvalidData, msg));
-        }
-        value = value * 10 + digit as u32;
-        if value > MAX_HEADER_VALUE {
-            let msg = "header value is too large";
+        };
+        if value > 0xFFFFFFF {
+            let msg = "hex literal is too large";
             return Err(Error::new(ErrorKind::InvalidData, msg));
         }
+        value = value * 0x10 + digit as u32;
+        any_digits = true;
     }
     Ok(value)
 }
+
+// ========================================================================= //
 
 #[cfg(test)]
 mod tests {
@@ -650,4 +1036,80 @@ mod tests {
                      111EE\n\
                      1E11E\n" as &[u8]);
     }
+
+    #[test]
+    fn read_font() {
+        let input: &[u8] = b"ahf0 h3 b2 n2\n\
+            \n\
+            def w3 s4\n\
+            101\n\
+            010\n\
+            101\n\
+            \n\
+            '|' w1 s2\n\
+            1\n\
+            1\n\
+            1\n\
+            \n\
+            '\\u{2603}' w2 s4\n\
+            11\n\
+            11\n\
+            00\n";
+        let font = Font::read(input).expect("failed to read font");
+        assert_eq!(font.glyph_height(), 3);
+        assert_eq!(font.baseline(), 2);
+        assert_eq!(font.default_glyph().image().width(), 3);
+        assert_eq!(font.default_glyph().spacing(), 4);
+        assert_eq!(font['|'].image().width(), 1);
+    }
+
+    #[test]
+    fn write_font() {
+        let mut font = Font::with_glyph_height(3);
+        font.set_baseline(2);
+
+        let mut img_default = Image::new(3, 3);
+        img_default[(0, 0)] = Color::Black;
+        img_default[(2, 0)] = Color::Black;
+        img_default[(1, 1)] = Color::Black;
+        img_default[(0, 2)] = Color::Black;
+        img_default[(2, 2)] = Color::Black;
+        font.set_default_glyph(Glyph::new(img_default, 4));
+
+        let mut img_snowman = Image::new(2, 3);
+        img_snowman[(0, 0)] = Color::Black;
+        img_snowman[(1, 0)] = Color::Black;
+        img_snowman[(0, 1)] = Color::Black;
+        img_snowman[(1, 1)] = Color::Black;
+        font.set_char_glyph('\u{2603}', Glyph::new(img_snowman, 4));
+
+        let mut img_vbar = Image::new(1, 3);
+        img_vbar[(0, 0)] = Color::Black;
+        img_vbar[(0, 1)] = Color::Black;
+        img_vbar[(0, 2)] = Color::Black;
+        font.set_char_glyph('|', Glyph::new(img_vbar, 2));
+
+        let mut output = Vec::<u8>::new();
+        font.write(&mut output).expect("failed to write font");
+        let mut expected = Vec::<u8>::new();
+        expected.extend_from_slice(b"ahf0 h3 b2 n2\n\
+            \n\
+            def w3 s4\n\
+            101\n\
+            010\n\
+            101\n\
+            \n\
+            '|' w1 s2\n\
+            1\n\
+            1\n\
+            1\n\
+            \n\
+            '\\u{2603}' w2 s4\n\
+            11\n\
+            11\n\
+            00\n");
+        assert_eq!(output, expected);
+    }
 }
+
+// ========================================================================= //
