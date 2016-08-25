@@ -754,8 +754,19 @@ pub struct Chars<'a> {
 
 impl<'a> Iterator for Chars<'a> {
     type Item = char;
+
     fn next(&mut self) -> Option<char> {
         self.iter.next().map(|&chr| chr)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+impl<'a> ExactSizeIterator for Chars<'a> {
+    fn len(&self) -> usize {
+        self.iter.len()
     }
 }
 
@@ -1090,6 +1101,7 @@ mod tests {
         assert_eq!(font.default_glyph().image().width(), 3);
         assert_eq!(font.default_glyph().spacing(), 4);
         assert_eq!(font['|'].image().width(), 1);
+        assert_eq!(font.chars().len(), 2);
     }
 
     #[test]
