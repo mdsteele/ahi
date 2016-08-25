@@ -792,7 +792,11 @@ fn read_char_escape<R: Read>(mut reader: R) -> io::Result<char> {
     if byte == b'\\' {
         try!(reader.read_exact(&mut buffer));
         let esc = buffer[0];
-        if esc == b'n' {
+        if esc == b'\'' {
+            Ok('\'')
+        } else if esc == b'"' {
+            Ok('"')
+        } else if esc == b'n' {
             Ok('\n')
         } else if esc == b'r' {
             Ok('\r')
