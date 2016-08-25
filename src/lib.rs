@@ -127,6 +127,8 @@
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, btree_map};
 use std::io::{self, Error, ErrorKind, Read, Write};
+use std::ops::Deref;
+use std::rc::Rc;
 
 // ========================================================================= //
 
@@ -555,8 +557,8 @@ impl Glyph {
 /// Represents a mapping from characters to glyphs.
 #[derive(Clone)]
 pub struct Font {
-    glyphs: BTreeMap<char, Glyph>,
-    default_glyph: Glyph,
+    glyphs: BTreeMap<char, Rc<Glyph>>,
+    default_glyph: Rc<Glyph>,
     baseline: i32,
 }
 
@@ -567,7 +569,7 @@ impl Font {
     pub fn with_glyph_height(height: u32) -> Font {
         Font {
             glyphs: BTreeMap::new(),
-            default_glyph: Glyph::new(Image::new(0, height), 0),
+            default_glyph: Rc::new(Glyph::new(Image::new(0, height), 0)),
             baseline: height as i32,
         }
     }
@@ -596,19 +598,25 @@ impl Font {
     /// get the default glyph for characters that have no glyph, use the index
     /// operator.
     pub fn get_char_glyph(&self, chr: char) -> Option<&Glyph> {
-        self.glyphs.get(&chr)
+        match self.glyphs.get(&chr) {
+            Some(glyph) => Some(glyph.deref()),
+            None => None,
+        }
     }
 
     /// Gets a mutable reference to the glyph for the given character, if any.
     pub fn get_char_glyph_mut(&mut self, chr: char) -> Option<&mut Glyph> {
-        self.glyphs.get_mut(&chr)
+        match self.glyphs.get_mut(&chr) {
+            Some(glyph) => Some(Rc::make_mut(glyph)),
+            None => None,
+        }
     }
 
     /// Sets the glyph for the given character.  Panics if the new glyph's
     /// height is not equal to the font's glyph height.
     pub fn set_char_glyph(&mut self, chr: char, glyph: Glyph) {
         assert_eq!(glyph.image().height(), self.glyph_height());
-        self.glyphs.insert(chr, glyph);
+        self.glyphs.insert(chr, Rc::new(glyph));
     }
 
     /// Removes the glyph for the given character from the font.  After calling
@@ -625,14 +633,14 @@ impl Font {
 
     /// Gets a mutable reference to the default glyph for this font.
     pub fn default_glyph_mut(&mut self) -> &mut Glyph {
-        &mut self.default_glyph
+        Rc::make_mut(&mut self.default_glyph)
     }
 
     /// Sets the default glyph for this font.  Panics if the new glyph's height
     /// is not equal to the font's glyph height.
     pub fn set_default_glyph(&mut self, glyph: Glyph) {
         assert_eq!(glyph.image().height(), self.glyph_height());
-        self.default_glyph = glyph;
+        self.default_glyph = Rc::new(glyph);
     }
 
     /// Returns an iterator over the characters that have glyphs in this font.
@@ -664,11 +672,11 @@ impl Font {
             let chr = try!(read_char_escape(reader.by_ref()));
             try!(read_exactly(reader.by_ref(), b"' "));
             let glyph = try!(Font::read_glyph(reader.by_ref(), height));
-            glyphs.insert(chr, glyph);
+            glyphs.insert(chr, Rc::new(glyph));
         }
         Ok(Font {
             glyphs: glyphs,
-            default_glyph: default_glyph,
+            default_glyph: Rc::new(default_glyph),
             baseline: baseline,
         })
     }
@@ -741,7 +749,10 @@ impl std::ops::Index<char> for Font {
 
 impl std::ops::IndexMut<char> for Font {
     fn index_mut(&mut self, index: char) -> &mut Glyph {
-        self.glyphs.get_mut(&index).unwrap_or(&mut self.default_glyph)
+        Rc::make_mut(match self.glyphs.get_mut(&index) {
+            Some(glyph) => glyph,
+            None => &mut self.default_glyph,
+        })
     }
 }
 
@@ -749,7 +760,7 @@ impl std::ops::IndexMut<char> for Font {
 
 /// An iterator over a the characters that have glyphs in a font.
 pub struct Chars<'a> {
-    iter: btree_map::Keys<'a, char, Glyph>,
+    iter: btree_map::Keys<'a, char, Rc<Glyph>>,
 }
 
 impl<'a> Iterator for Chars<'a> {
