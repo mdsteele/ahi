@@ -125,7 +125,7 @@
 #![warn(missing_docs)]
 
 use std::cmp::{max, min};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map};
 use std::io::{self, Error, ErrorKind, Read, Write};
 
 // ========================================================================= //
@@ -474,6 +474,16 @@ impl Image {
             pixels: pixels.into_boxed_slice(),
         }
     }
+
+    /// Returns a copy of the image, cropped to the given size.  If the new
+    /// width/height is less than the current value, pixels are removed from
+    /// the right/bottom; if the new width/height is greater than the current
+    /// value, extra transparent pixels are added to the right/bottom.
+    pub fn crop(&self, new_width: u32, new_height: u32) -> Image {
+        let mut new_image = Image::new(new_width, new_height);
+        new_image.draw(self, 0, 0);
+        new_image
+    }
 }
 
 impl std::ops::Index<(u32, u32)> for Image {
@@ -625,6 +635,11 @@ impl Font {
         self.default_glyph = glyph;
     }
 
+    /// Returns an iterator over the characters that have glyphs in this font.
+    pub fn chars(&self) -> Chars {
+        Chars { iter: self.glyphs.keys() }
+    }
+
     /// Reads a font from an AHF file.
     pub fn read<R: Read>(mut reader: R) -> io::Result<Font> {
         try!(read_exactly(reader.by_ref(), b"ahf"));
@@ -727,6 +742,20 @@ impl std::ops::Index<char> for Font {
 impl std::ops::IndexMut<char> for Font {
     fn index_mut(&mut self, index: char) -> &mut Glyph {
         self.glyphs.get_mut(&index).unwrap_or(&mut self.default_glyph)
+    }
+}
+
+// ========================================================================= //
+
+/// An iterator over a the characters that have glyphs in a font.
+pub struct Chars<'a> {
+    iter: btree_map::Keys<'a, char, Glyph>,
+}
+
+impl<'a> Iterator for Chars<'a> {
+    type Item = char;
+    fn next(&mut self) -> Option<char> {
+        self.iter.next().map(|&chr| chr)
     }
 }
 
