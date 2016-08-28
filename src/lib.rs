@@ -113,14 +113,15 @@
 //! pixel.  Each pixel row line (including the last one in the file) must be
 //! terminated by a newline.
 //!
-//! Each glyph subheader line has the form `<char> w<width> s<spacing>`, where
-//! the `<char>` field is either `def` for the font's default glyph (which must
-//! be present, and must come first), or a single-quoted Rust character literal
-//! (e.g. `'g'` or `'\n'` or `'\u{2603}'`).  The spacing field gives the number
-//! of pixels between the left edge of that glyph and the left edge of the next
-//! glyph when printing a string.
-//!
-//! Color mapping of pixels works the same as for AHI files.
+
+//! Each glyph subheader line has the form `<char> w<width> l<left> r<right>`,
+//! where the `<char>` field is either `def` for the font's default glyph
+//! (which must be present, and must come first), or a single-quoted Rust
+//! character literal (e.g. `'g'` or `'\n'` or `'\u{2603}'`).  The `<left>` and
+//! `<right>` fields give the number of pixels between the left edge of the
+//! glyph's image and the virtual left/right edge of the glyph itself when
+//! printing a string.  Color mapping of pixels works the same as for AHI
+//! files.
 
 #![warn(missing_docs)]
 
@@ -515,15 +516,17 @@ impl std::ops::IndexMut<(u32, u32)> for Image {
 #[derive(Clone)]
 pub struct Glyph {
     image: Image,
-    spacing: i32,
+    left: i32,
+    right: i32,
 }
 
 impl Glyph {
-    /// Creates a new glyph with the given image and spacing.
-    pub fn new(image: Image, spacing: i32) -> Glyph {
+    /// Creates a new glyph with the given image and left/right edges.
+    pub fn new(image: Image, left: i32, right: i32) -> Glyph {
         Glyph {
             image: image,
-            spacing: spacing,
+            left: left,
+            right: right,
         }
     }
 
@@ -537,18 +540,33 @@ impl Glyph {
         &mut self.image
     }
 
-    /// Returns the spacing of this glyph, in pixels.  This is the distance
-    /// from the left edge of this glyph at which the next glyph in the text
-    /// should start, which may be slightly different than the width of this
-    /// glyph's image (e.g. if this is an italic glyph whose image should
-    /// extend a bit over that of the next glyph).
-    pub fn spacing(&self) -> i32 {
-        self.spacing
+    /// Returns the left edge of this glyph, in pixels.  This is the distance
+    /// (possibly negative) to the right of the left edge of this glyph's image
+    /// at which this glyph should start.  Normally this is zero, but can be
+    /// positive if the glyph needs extra space on the left, or negative if the
+    /// image should extend to the left (e.g. the tail on a lowercase j).
+    pub fn left_edge(&self) -> i32 {
+        self.left
     }
 
-    /// Sets the spacing for this glyph.
-    pub fn set_spacing(&mut self, spacing: i32) {
-        self.spacing = spacing;
+    /// Sets the left edge for this glyph.
+    pub fn set_left_edge(&mut self, left: i32) {
+        self.left = left;
+    }
+
+    /// Returns the right edge of this glyph, in pixels.  This is the distance
+    /// (possibly negative) to the right of the left edge of this glyph's image
+    /// at which the next glyph in the text should start, which may be slightly
+    /// different than the width of this glyph's image (e.g. if this is an
+    /// italic glyph whose image should extend a bit over that of the next
+    /// glyph).
+    pub fn right_edge(&self) -> i32 {
+        self.right
+    }
+
+    /// Sets the right edge for this glyph.
+    pub fn set_right_edge(&mut self, right: i32) {
+        self.right = right;
     }
 }
 
@@ -569,7 +587,7 @@ impl Font {
     pub fn with_glyph_height(height: u32) -> Font {
         Font {
             glyphs: BTreeMap::new(),
-            default_glyph: Rc::new(Glyph::new(Image::new(0, height), 0)),
+            default_glyph: Rc::new(Glyph::new(Image::new(0, height), 0, 0)),
             baseline: height as i32,
         }
     }
@@ -684,8 +702,10 @@ impl Font {
     fn read_glyph<R: Read>(mut reader: R, height: u32) -> io::Result<Glyph> {
         try!(read_exactly(reader.by_ref(), b"w"));
         let width = try!(read_header_uint(reader.by_ref(), b' '));
-        try!(read_exactly(reader.by_ref(), b"s"));
-        let spacing = try!(read_header_int(reader.by_ref(), b'\n'));
+        try!(read_exactly(reader.by_ref(), b"l"));
+        let left = try!(read_header_int(reader.by_ref(), b' '));
+        try!(read_exactly(reader.by_ref(), b"r"));
+        let right = try!(read_header_int(reader.by_ref(), b'\n'));
         let mut row_buffer = vec![0u8; width as usize];
         let mut pixels = Vec::with_capacity((width * height) as usize);
         for _ in 0..height {
@@ -702,7 +722,8 @@ impl Font {
         };
         Ok(Glyph {
             image: image,
-            spacing: spacing,
+            left: left,
+            right: right,
         })
     }
 
@@ -728,7 +749,11 @@ impl Font {
         let image = glyph.image();
         let width = image.width();
         let height = image.height();
-        try!(write!(writer, "w{} s{}\n", width, glyph.spacing()));
+        try!(write!(writer,
+                    "w{} l{} r{}\n",
+                    width,
+                    glyph.left_edge(),
+                    glyph.right_edge()));
         for row in 0..height {
             for col in 0..width {
                 let color = image[(col, row)];
@@ -1098,17 +1123,17 @@ mod tests {
     fn read_font() {
         let input: &[u8] = b"ahf0 h3 b2 n2\n\
             \n\
-            def w3 s4\n\
+            def w3 l0 r4\n\
             101\n\
             010\n\
             101\n\
             \n\
-            '|' w1 s2\n\
+            '|' w1 l0 r2\n\
             1\n\
             1\n\
             1\n\
             \n\
-            '\\u{2603}' w2 s4\n\
+            '\\u{2603}' w2 l0 r4\n\
             11\n\
             11\n\
             00\n";
@@ -1116,7 +1141,8 @@ mod tests {
         assert_eq!(font.glyph_height(), 3);
         assert_eq!(font.baseline(), 2);
         assert_eq!(font.default_glyph().image().width(), 3);
-        assert_eq!(font.default_glyph().spacing(), 4);
+        assert_eq!(font.default_glyph().left_edge(), 0);
+        assert_eq!(font.default_glyph().right_edge(), 4);
         assert_eq!(font['|'].image().width(), 1);
         assert_eq!(font.chars().len(), 2);
     }
@@ -1132,37 +1158,37 @@ mod tests {
         img_default[(1, 1)] = Color::Black;
         img_default[(0, 2)] = Color::Black;
         img_default[(2, 2)] = Color::Black;
-        font.set_default_glyph(Glyph::new(img_default, 4));
+        font.set_default_glyph(Glyph::new(img_default, 0, 4));
 
         let mut img_snowman = Image::new(2, 3);
         img_snowman[(0, 0)] = Color::Black;
         img_snowman[(1, 0)] = Color::Black;
         img_snowman[(0, 1)] = Color::Black;
         img_snowman[(1, 1)] = Color::Black;
-        font.set_char_glyph('\u{2603}', Glyph::new(img_snowman, 4));
+        font.set_char_glyph('\u{2603}', Glyph::new(img_snowman, 0, 4));
 
         let mut img_vbar = Image::new(1, 3);
         img_vbar[(0, 0)] = Color::Black;
         img_vbar[(0, 1)] = Color::Black;
         img_vbar[(0, 2)] = Color::Black;
-        font.set_char_glyph('|', Glyph::new(img_vbar, 2));
+        font.set_char_glyph('|', Glyph::new(img_vbar, 0, 2));
 
         let mut output = Vec::<u8>::new();
         font.write(&mut output).expect("failed to write font");
         let mut expected = Vec::<u8>::new();
         expected.extend_from_slice(b"ahf0 h3 b2 n2\n\
             \n\
-            def w3 s4\n\
+            def w3 l0 r4\n\
             101\n\
             010\n\
             101\n\
             \n\
-            '|' w1 s2\n\
+            '|' w1 l0 r2\n\
             1\n\
             1\n\
             1\n\
             \n\
-            '\\u{2603}' w2 s4\n\
+            '\\u{2603}' w2 l0 r4\n\
             11\n\
             11\n\
             00\n");
