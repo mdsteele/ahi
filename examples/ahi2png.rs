@@ -8,7 +8,7 @@ use std::io;
 use std::path::Path;
 
 fn convert_image(image: &ahi::Image, output_path: &Path) -> io::Result<()> {
-    let rgba_data = image.rgba_data();
+    let rgba_data = image.rgba_data(ahi::Palette::default());
     let output_file = File::create(&output_path)?;
     let mut encoder =
         png::Encoder::new(output_file, image.width(), image.height());
