@@ -56,13 +56,13 @@
 //! per pixel row, with one hex digit per pixel.  Each pixel row line
 //! (including the last one in the file) must be terminated by a newline.
 //!
-//! To map from hex digits to colors, treat each hex digit as a four-digit
-//! binary number; the 1's place controls brightness, the 2's place controls
-//! red, the 4's place controls green, and the 8's place controls blue.  For
-//! example, `3 = 0b0011` is full-brightness red; `A = 0b1010` is
-//! half-brightness magenta; `F = 0b1111` is white; and `E = 0x1110` is
-//! "half-brightness white", i.e. gray.  Since "full-brightness black"
-//! (`1 = 0b0001`) and "half-brightness black" (`0 = 0b0000`) would be the same
+//! To map from hex digits to colors in the default palette, treat each hex
+//! digit as a four-digit binary number; the 1's place controls brightness, the
+//! 2's place controls red, the 4's place controls green, and the 8's place
+//! controls blue.  For example, `3 = 0b0011` is full-brightness red; `A =
+//! 0b1010` is half-brightness magenta; `F = 0b1111` is white; and `E = 0x1110`
+//! is "half-brightness white", i.e. gray.  Since "full-brightness black" (`1 =
+//! 0b0001`) and "half-brightness black" (`0 = 0b0000`) would be the same
 //! color, instead color `0` is special-cased to be transparent (and color `1`
 //! is black).
 //!
@@ -152,7 +152,7 @@ impl Image {
         return Image {
             width: width,
             height: height,
-            pixels: vec![Color::Transparent; num_pixels].into_boxed_slice(),
+            pixels: vec![Color::C0; num_pixels].into_boxed_slice(),
         };
     }
 
@@ -254,7 +254,7 @@ impl Image {
 
     /// Sets all pixels in the image to transparent.
     pub fn clear(&mut self) {
-        self.pixels = vec![Color::Transparent; self.pixels.len()]
+        self.pixels = vec![Color::C0; self.pixels.len()]
                           .into_boxed_slice();
     }
 
@@ -290,7 +290,7 @@ impl Image {
         for row in 0..num_rows {
             for col in 0..num_cols {
                 let color = src[(src_start_col + col, src_start_row + row)];
-                if color != Color::Transparent {
+                if color != Color::C0 {
                     self[(dest_start_col + col, dest_start_row + row)] = color;
                 }
             }
@@ -835,9 +835,9 @@ mod tests {
     #[test]
     fn image_rgba_data() {
         let mut image = Image::new(2, 2);
-        image[(0, 0)] = Color::DarkRed;
-        image[(0, 1)] = Color::Green;
-        image[(1, 1)] = Color::Cyan;
+        image[(0, 0)] = Color::C2;
+        image[(0, 1)] = Color::C5;
+        image[(1, 1)] = Color::Cd;
         assert_eq!(image.rgba_data(Palette::default()),
                    vec![127, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255, 0, 255,
                         255, 255]);
@@ -861,8 +861,8 @@ mod tests {
                              0E\n";
         let images = Image::read_all(input).expect("failed to read images");
         assert_eq!(images.len(), 2);
-        assert_eq!(images[0][(0, 1)], Color::Green);
-        assert_eq!(images[1][(0, 0)], Color::Gray);
+        assert_eq!(images[0][(0, 1)], Color::C5);
+        assert_eq!(images[1][(0, 0)], Color::Ce);
     }
 
     #[test]
@@ -875,12 +875,12 @@ mod tests {
     #[test]
     fn write_two_images() {
         let mut image0 = Image::new(2, 2);
-        image0[(0, 0)] = Color::DarkRed;
-        image0[(0, 1)] = Color::Green;
-        image0[(1, 1)] = Color::Cyan;
+        image0[(0, 0)] = Color::C2;
+        image0[(0, 1)] = Color::C5;
+        image0[(1, 1)] = Color::Cd;
         let mut image1 = Image::new(2, 2);
-        image1[(0, 0)] = Color::Gray;
-        image1[(1, 1)] = Color::Gray;
+        image1[(0, 0)] = Color::Ce;
+        image1[(1, 1)] = Color::Ce;
         let mut output = Vec::<u8>::new();
         Image::write_all(&mut output, &[image0, image1])
             .expect("failed to write images");
@@ -897,61 +897,61 @@ mod tests {
     #[test]
     fn clear_image() {
         let mut image = Image::new(2, 2);
-        image[(1, 0)] = Color::DarkRed;
-        image[(1, 1)] = Color::Green;
+        image[(1, 0)] = Color::C2;
+        image[(1, 1)] = Color::C5;
         image.clear();
-        assert_eq!(image[(1, 0)], Color::Transparent);
-        assert_eq!(image[(1, 1)], Color::Transparent);
+        assert_eq!(image[(1, 0)], Color::C0);
+        assert_eq!(image[(1, 1)], Color::C0);
     }
 
     #[test]
     fn flip_image_horz() {
         let mut image = Image::new(2, 2);
-        image[(0, 1)] = Color::Red;
-        image[(1, 1)] = Color::Green;
+        image[(0, 1)] = Color::C3;
+        image[(1, 1)] = Color::C5;
         let image = image.flip_horz();
-        assert_eq!(image[(0, 1)], Color::Green);
-        assert_eq!(image[(1, 1)], Color::Red);
+        assert_eq!(image[(0, 1)], Color::C5);
+        assert_eq!(image[(1, 1)], Color::C3);
     }
 
     #[test]
     fn flip_image_vert() {
         let mut image = Image::new(2, 2);
-        image[(1, 0)] = Color::Red;
-        image[(1, 1)] = Color::Green;
+        image[(1, 0)] = Color::C3;
+        image[(1, 1)] = Color::C5;
         let image = image.flip_vert();
-        assert_eq!(image[(1, 0)], Color::Green);
-        assert_eq!(image[(1, 1)], Color::Red);
+        assert_eq!(image[(1, 0)], Color::C5);
+        assert_eq!(image[(1, 1)], Color::C3);
     }
 
     #[test]
     fn rotate_image_cw() {
         let mut image = Image::new(4, 2);
-        image[(1, 0)] = Color::Red;
-        image[(1, 1)] = Color::Green;
+        image[(1, 0)] = Color::C3;
+        image[(1, 1)] = Color::C5;
         let image = image.rotate_cw();
         assert_eq!(2, image.width());
         assert_eq!(4, image.height());
-        assert_eq!(image[(1, 1)], Color::Red);
-        assert_eq!(image[(0, 1)], Color::Green);
+        assert_eq!(image[(1, 1)], Color::C3);
+        assert_eq!(image[(0, 1)], Color::C5);
     }
 
     #[test]
     fn rotate_image_ccw() {
         let mut image = Image::new(4, 2);
-        image[(1, 0)] = Color::Red;
-        image[(1, 1)] = Color::Green;
+        image[(1, 0)] = Color::C3;
+        image[(1, 1)] = Color::C5;
         let image = image.rotate_ccw();
         assert_eq!(2, image.width());
         assert_eq!(4, image.height());
-        assert_eq!(image[(0, 2)], Color::Red);
-        assert_eq!(image[(1, 2)], Color::Green);
+        assert_eq!(image[(0, 2)], Color::C3);
+        assert_eq!(image[(1, 2)], Color::C5);
     }
 
     #[test]
     fn fill_contained_rect() {
         let mut image = Image::new(5, 5);
-        image.fill_rect(1, 1, 2, 2, Color::Red);
+        image.fill_rect(1, 1, 2, 2, Color::C3);
         let mut output = Vec::<u8>::new();
         Image::write_all(&mut output, &[image])
             .expect("failed to write image");
@@ -968,7 +968,7 @@ mod tests {
     #[test]
     fn fill_overlapping_rect() {
         let mut image = Image::new(5, 3);
-        image.fill_rect(2, 1, 7, 7, Color::Red);
+        image.fill_rect(2, 1, 7, 7, Color::C3);
         let mut output = Vec::<u8>::new();
         Image::write_all(&mut output, &[image])
             .expect("failed to write image");
@@ -1039,24 +1039,24 @@ mod tests {
         font.set_baseline(2);
 
         let mut img_default = Image::new(3, 3);
-        img_default[(0, 0)] = Color::Black;
-        img_default[(2, 0)] = Color::Black;
-        img_default[(1, 1)] = Color::Black;
-        img_default[(0, 2)] = Color::Black;
-        img_default[(2, 2)] = Color::Black;
+        img_default[(0, 0)] = Color::C1;
+        img_default[(2, 0)] = Color::C1;
+        img_default[(1, 1)] = Color::C1;
+        img_default[(0, 2)] = Color::C1;
+        img_default[(2, 2)] = Color::C1;
         font.set_default_glyph(Glyph::new(img_default, 0, 4));
 
         let mut img_snowman = Image::new(2, 3);
-        img_snowman[(0, 0)] = Color::Black;
-        img_snowman[(1, 0)] = Color::Black;
-        img_snowman[(0, 1)] = Color::Black;
-        img_snowman[(1, 1)] = Color::Black;
+        img_snowman[(0, 0)] = Color::C1;
+        img_snowman[(1, 0)] = Color::C1;
+        img_snowman[(0, 1)] = Color::C1;
+        img_snowman[(1, 1)] = Color::C1;
         font.set_char_glyph('\u{2603}', Glyph::new(img_snowman, 0, 4));
 
         let mut img_vbar = Image::new(1, 3);
-        img_vbar[(0, 0)] = Color::Black;
-        img_vbar[(0, 1)] = Color::Black;
-        img_vbar[(0, 2)] = Color::Black;
+        img_vbar[(0, 0)] = Color::C1;
+        img_vbar[(0, 1)] = Color::C1;
+        img_vbar[(0, 2)] = Color::C1;
         font.set_char_glyph('|', Glyph::new(img_vbar, 0, 2));
 
         let mut output = Vec::<u8>::new();

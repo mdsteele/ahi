@@ -36,12 +36,12 @@ impl Palette {
 
     /// Gets this palette's RGBA for the given color slot.
     pub fn get(&self, color: Color) -> (u8, u8, u8, u8) {
-        self.rgba[color.index()]
+        self.rgba[color as usize]
     }
 
     /// Sets this palette's RGBA for the given color slot.
     pub fn set(&mut self, color: Color, rgba: (u8, u8, u8, u8)) {
-        self.rgba[color.index()] = rgba;
+        self.rgba[color as usize] = rgba;
     }
 }
 
