@@ -5,3 +5,6 @@ authors = ["Matthew D. Steele <mdsteele@alum.mit.edu>"]
 license = "GPL-3.0+"
 
 [dependencies]
+
+[dev-dependencies]
+png = "0.12"
