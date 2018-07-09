@@ -140,6 +140,9 @@ use std::rc::Rc;
 
 // ========================================================================= //
 
+// TODO: Once v1 format Image metadata is implemented, change ahf0-reading API
+// to just return a Collection with the appropriate image metadata.
+
 /// An image for a single character in a font, along with spacing information.
 #[derive(Clone)]
 pub struct Glyph {

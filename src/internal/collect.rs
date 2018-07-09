@@ -25,6 +25,15 @@ use std::io::{self, Error, ErrorKind, Read, Write};
 
 // ========================================================================= //
 
+// TODO: Add support for ahi1 format:
+// - Allow storing palettes as well as images
+// - Allow storing a different width/height for each image
+// - Allow storing string tags for each image
+// - Allow storing a vector of metadata i32s for each image
+
+// TODO: Support BHI format, which is a binary encoding of an AHI file, with
+// compressed image data.
+
 /// A collection of palettes and/or images.
 pub struct Collection {
     /// The palettes in this collection.
