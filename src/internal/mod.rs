@@ -17,6 +17,7 @@
 // | with AHI.  If not, see <http://www.gnu.org/licenses/>.                   |
 // +--------------------------------------------------------------------------+
 
+pub mod collect;
 pub mod color;
 pub mod image;
 pub mod palette;

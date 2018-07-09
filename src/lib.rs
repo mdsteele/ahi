@@ -127,6 +127,7 @@
 
 mod internal;
 
+pub use internal::collect::Collection;
 pub use internal::color::Color;
 pub use internal::image::Image;
 pub use internal::palette::Palette;

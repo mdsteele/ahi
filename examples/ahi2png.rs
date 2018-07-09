@@ -35,11 +35,12 @@ fn main() -> io::Result<()> {
     let path_arg = env::args().nth(1).unwrap();
     let input_path = Path::new(&path_arg);
     let input_file = File::open(&input_path)?;
-    let input_images = ahi::Image::read_all(input_file)?;
-    if input_images.len() == 1 {
-        convert_image(&input_images[0], &input_path.with_extension("png"))?;
+    let collection = ahi::Collection::read(input_file)?;
+    if collection.images.len() == 1 {
+        convert_image(&collection.images[0],
+                      &input_path.with_extension("png"))?;
     } else {
-        for (index, image) in input_images.iter().enumerate() {
+        for (index, image) in collection.images.iter().enumerate() {
             let output_path =
                 input_path.with_extension(format!("{}.png", index));
             convert_image(image, &output_path)?;

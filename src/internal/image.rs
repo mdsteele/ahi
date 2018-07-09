@@ -19,9 +19,7 @@
 
 use internal::color::Color;
 use internal::palette::Palette;
-use internal::util::{read_exactly, read_header_uint};
 use std::cmp::{max, min};
-use std::io::{self, Error, ErrorKind, Read, Write};
 use std::ops::{Index, IndexMut};
 
 // ========================================================================= //
@@ -67,78 +65,6 @@ impl Image {
             data.push(a);
         }
         data
-    }
-
-    /// Reads a group of images from an AHI file.
-    pub fn read_all<R: Read>(mut reader: R) -> io::Result<Vec<Image>> {
-        try!(read_exactly(reader.by_ref(), b"ahi"));
-        let version = try!(read_header_uint(reader.by_ref(), b' '));
-        if version != 0 {
-            let msg = format!("unsupported AHI version: {}", version);
-            return Err(Error::new(ErrorKind::InvalidData, msg));
-        }
-        try!(read_exactly(reader.by_ref(), b"w"));
-        let width = try!(read_header_uint(reader.by_ref(), b' '));
-        try!(read_exactly(reader.by_ref(), b"h"));
-        let height = try!(read_header_uint(reader.by_ref(), b' '));
-        try!(read_exactly(reader.by_ref(), b"n"));
-        let num_images = try!(read_header_uint(reader.by_ref(), b'\n'));
-        let mut images = Vec::with_capacity(num_images as usize);
-        let mut row_buffer = vec![0u8; width as usize];
-        for _ in 0..num_images {
-            try!(read_exactly(reader.by_ref(), b"\n"));
-            let mut pixels = Vec::with_capacity((width * height) as usize);
-            for _ in 0..height {
-                try!(reader.read_exact(&mut row_buffer));
-                for &byte in &row_buffer {
-                    pixels.push(try!(Color::from_byte(byte)));
-                }
-                try!(read_exactly(reader.by_ref(), b"\n"));
-            }
-            images.push(Image {
-                width: width,
-                height: height,
-                pixels: pixels.into_boxed_slice(),
-            })
-        }
-        Ok(images)
-    }
-
-    /// Writes a group of images to an AHI file.  Returns an error if the
-    /// images aren't all the same dimensions.
-    pub fn write_all<W: Write>(mut writer: W,
-                               images: &[Image])
-                               -> io::Result<()> {
-        let (width, height) = if images.is_empty() {
-            (0, 0)
-        } else {
-            (images[0].width, images[0].height)
-        };
-        try!(write!(writer,
-                    "ahi0 w{} h{} n{}\n",
-                    width,
-                    height,
-                    images.len()));
-        for image in images {
-            if image.width != width || image.height != height {
-                let msg = format!("images must all have the same dimensions \
-                                   (found {}x{} instead of {}x{})",
-                                  image.width,
-                                  image.height,
-                                  width,
-                                  height);
-                return Err(Error::new(ErrorKind::InvalidInput, msg));
-            }
-            try!(write!(writer, "\n"));
-            for row in 0..height {
-                for col in 0..width {
-                    let color = image.pixels[(row * width + col) as usize];
-                    try!(writer.write_all(&[color.to_byte()]));
-                }
-                try!(write!(writer, "\n"));
-            }
-        }
-        Ok(())
     }
 
     /// Sets all pixels in the image to transparent.
@@ -289,6 +215,7 @@ impl IndexMut<(u32, u32)> for Image {
 
 #[cfg(test)]
 mod tests {
+    use internal::collect::Collection;
     use super::*;
 
     #[test]
@@ -300,57 +227,6 @@ mod tests {
         assert_eq!(image.rgba_data(Palette::default()),
                    vec![127, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255, 0, 255,
                         255, 255]);
-    }
-
-    #[test]
-    fn read_zero_images() {
-        let input: &[u8] = b"ahi0 w0 h0 n0";
-        let images = Image::read_all(input).expect("failed to read images");
-        assert_eq!(images.len(), 0);
-    }
-
-    #[test]
-    fn read_two_images() {
-        let input: &[u8] = b"ahi0 w2 h2 n2\n\
-                             \n\
-                             20\n\
-                             5D\n\
-                             \n\
-                             E0\n\
-                             0E\n";
-        let images = Image::read_all(input).expect("failed to read images");
-        assert_eq!(images.len(), 2);
-        assert_eq!(images[0][(0, 1)], Color::C5);
-        assert_eq!(images[1][(0, 0)], Color::Ce);
-    }
-
-    #[test]
-    fn write_zero_images() {
-        let mut output = Vec::<u8>::new();
-        Image::write_all(&mut output, &[]).expect("failed to write images");
-        assert_eq!(&output as &[u8], b"ahi0 w0 h0 n0\n");
-    }
-
-    #[test]
-    fn write_two_images() {
-        let mut image0 = Image::new(2, 2);
-        image0[(0, 0)] = Color::C2;
-        image0[(0, 1)] = Color::C5;
-        image0[(1, 1)] = Color::Cd;
-        let mut image1 = Image::new(2, 2);
-        image1[(0, 0)] = Color::Ce;
-        image1[(1, 1)] = Color::Ce;
-        let mut output = Vec::<u8>::new();
-        Image::write_all(&mut output, &[image0, image1])
-            .expect("failed to write images");
-        assert_eq!(&output as &[u8],
-                   b"ahi0 w2 h2 n2\n\
-                     \n\
-                     20\n\
-                     5D\n\
-                     \n\
-                     E0\n\
-                     0E\n");
     }
 
     #[test]
@@ -409,11 +285,12 @@ mod tests {
 
     #[test]
     fn fill_contained_rect() {
+        let mut collection = Collection::new();
         let mut image = Image::new(5, 5);
         image.fill_rect(1, 1, 2, 2, Color::C3);
+        collection.images.push(image);
         let mut output = Vec::<u8>::new();
-        Image::write_all(&mut output, &[image])
-            .expect("failed to write image");
+        collection.write(&mut output).unwrap();
         assert_eq!(&output as &[u8],
                    b"ahi0 w5 h5 n1\n\
                      \n\
@@ -426,11 +303,12 @@ mod tests {
 
     #[test]
     fn fill_overlapping_rect() {
+        let mut collection = Collection::new();
         let mut image = Image::new(5, 3);
         image.fill_rect(2, 1, 7, 7, Color::C3);
+        collection.images.push(image);
         let mut output = Vec::<u8>::new();
-        Image::write_all(&mut output, &[image])
-            .expect("failed to write image");
+        collection.write(&mut output).unwrap();
         assert_eq!(&output as &[u8],
                    b"ahi0 w5 h3 n1\n\
                      \n\
@@ -450,12 +328,13 @@ mod tests {
                              01110\n\
                              11011\n\
                              01110\n";
-        let images = Image::read_all(input).expect("failed to read images");
-        let mut image = images[0].clone();
-        image.draw(&images[1], -1, 1);
+        let collection = Collection::read(input).unwrap();
+        let mut image = collection.images[0].clone();
+        image.draw(&collection.images[1], -1, 1);
+        let mut collection = Collection::new();
+        collection.images.push(image);
         let mut output = Vec::<u8>::new();
-        Image::write_all(&mut output, &[image])
-            .expect("failed to write image");
+        collection.write(&mut output).unwrap();
         assert_eq!(&output as &[u8],
                    b"ahi0 w5 h3 n1\n\
                      \n\
