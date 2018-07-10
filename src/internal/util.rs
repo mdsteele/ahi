@@ -124,16 +124,12 @@ pub(crate) fn read_header_uint<R: Read>(reader: R, terminator: u8)
     Ok(value as u32)
 }
 
-fn read_hex_u32<R: Read>(reader: R, terminator: u8) -> io::Result<u32> {
-    let mut any_digits = false;
-    let mut value: u32 = 0;
+pub(crate) fn read_hex_digits<R: Read>(reader: R, terminator: u8)
+                                       -> io::Result<Vec<u8>> {
+    let mut digits = Vec::<u8>::new();
     for next in reader.bytes() {
-        let byte = try!(next);
+        let byte = next?;
         if byte == terminator {
-            if !any_digits {
-                let msg = "missing hex literal";
-                return Err(Error::new(ErrorKind::InvalidData, msg));
-            }
             break;
         }
         let digit = if byte >= b'0' && byte <= b'9' {
@@ -147,12 +143,25 @@ fn read_hex_u32<R: Read>(reader: R, terminator: u8) -> io::Result<u32> {
                               String::from_utf8_lossy(&[byte]));
             return Err(Error::new(ErrorKind::InvalidData, msg));
         };
-        if value > 0xFFFFFFF {
-            let msg = "hex literal is too large";
-            return Err(Error::new(ErrorKind::InvalidData, msg));
-        }
+        digits.push(digit as u8);
+    }
+    Ok(digits)
+}
+
+pub(crate) fn read_hex_u32<R: Read>(reader: R, terminator: u8)
+                                    -> io::Result<u32> {
+    let digits = read_hex_digits(reader, terminator)?;
+    if digits.is_empty() {
+        let msg = "missing hex literal";
+        return Err(Error::new(ErrorKind::InvalidData, msg));
+    }
+    if digits.len() > 8 {
+        let msg = "hex literal is too large";
+        return Err(Error::new(ErrorKind::InvalidData, msg));
+    }
+    let mut value: u32 = 0;
+    for digit in digits.into_iter() {
         value = value * 0x10 + digit as u32;
-        any_digits = true;
     }
     Ok(value)
 }
