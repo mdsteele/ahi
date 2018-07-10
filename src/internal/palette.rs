@@ -106,32 +106,32 @@ impl Palette {
             } else if a == 0xff {
                 if r == g && g == b {
                     if r % 0x11 == 0 {
-                        write!(writer, "{:01x}", r / 0x11)?;
+                        write!(writer, "{:01X}", r / 0x11)?;
                     } else {
-                        write!(writer, "{:02x}", r)?;
+                        write!(writer, "{:02X}", r)?;
                     }
                 } else {
                     if r % 0x11 == 0 && g % 0x11 == 0 && b % 0x11 == 0 {
-                        write!(writer, "{:01x}{:01x}{:01x}",
+                        write!(writer, "{:01X}{:01X}{:01X}",
                                r / 0x11, g / 0x11, b / 0x11)?;
                     } else {
-                        write!(writer, "{:02x}{:02x}{:02x}", r, g, b)?;
+                        write!(writer, "{:02X}{:02X}{:02X}", r, g, b)?;
                     }
                 }
             } else if a % 0x11 == 0 {
                 if r % 0x11 == 0 && g % 0x11 == 0 && b % 0x11 == 0 {
-                    write!(writer, "{:01x}{:01x}{:01x}{:01x}",
+                    write!(writer, "{:01X}{:01X}{:01X}{:01X}",
                            r / 0x11, g / 0x11, b / 0x11, a / 0x11)?;
                 } else {
-                    write!(writer, "{:02x}{:02x}{:02x}{:01x}",
+                    write!(writer, "{:02X}{:02X}{:02X}{:01X}",
                            r, g, b, a / 0x11)?;
                 }
             } else {
                 if r % 0x11 == 0 && g % 0x11 == 0 && b % 0x11 == 0 {
-                    write!(writer, "{:01x}{:01x}{:01x}{:02x}",
+                    write!(writer, "{:01X}{:01X}{:01X}{:02X}",
                            r / 0x11, g / 0x11, b / 0x11, a)?;
                 } else {
-                    write!(writer, "{:02x}{:02x}{:02x}{:02x}", r, g, b, a)?;
+                    write!(writer, "{:02X}{:02X}{:02X}{:02X}", r, g, b, a)?;
                 }
             }
             if index == 15 {
@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn read_palette() {
         let input: &[u8] =
-            b"c;;7f;f00;1eba;c2c7f;ff7f00;0;f;3f7fbf9;01234567;1;2;3;4;5\n";
+            b"C;;7F;F00;1EBA;C2C7F;FF7F00;0;F;3F7FBF9;01234567;1;2;3;4;5\n";
         let palette = Palette::read(input).unwrap();
         assert_eq!(palette.get(Color::C0), (0xcc, 0xcc, 0xcc, 0xff));
         assert_eq!(palette.get(Color::C1), (0, 0, 0, 0));
@@ -192,7 +192,7 @@ mod tests {
     #[test]
     fn read_and_write_palette() {
         let input: &[u8] =
-            b"c;;7f;f00;1eba;c2c7f;ff7f00;0;f;3f7fbf9;01234567;1;2;3;4;5\n";
+            b"C;;7F;F00;1EBA;C2C7F;FF7F00;0;F;3F7FBF9;01234567;1;2;3;4;5\n";
         let palette = Palette::read(input).unwrap();
         let mut output = Vec::<u8>::new();
         palette.write(&mut output).unwrap();

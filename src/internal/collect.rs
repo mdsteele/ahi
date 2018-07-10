@@ -27,12 +27,18 @@ use std::io::{self, Error, ErrorKind, Read, Write};
 
 // TODO: Add support for ahi1 format:
 // - [DONE] Allow storing palettes as well as images
-// - Allow storing a different width/height for each image
+// - [DONE] Allow storing a different width/height for each image
 // - Allow storing string tags for each image
 // - Allow storing a vector of metadata i32s for each image
 
 // TODO: Support BHI format, which is a binary encoding of an AHI file, with
 // compressed image data.
+
+const FLAG_INDIVIDUAL_DIMENSIONS: u32 = 1;
+// TODO: const FLAG_STRING_TAGS: u32 = 2;
+// TODO: const FLAG_METADATA_INTS: u32 = 4;
+
+// ========================================================================= //
 
 /// A collection of palettes and/or images.
 pub struct Collection {
@@ -59,7 +65,7 @@ impl Collection {
             let msg = format!("unsupported AHI version: {}", version);
             return Err(Error::new(ErrorKind::InvalidData, msg));
         }
-        let _flags = if version == 1 {
+        let flags = if version == 1 {
             read_exactly(reader.by_ref(), b"f")?;
             read_hex_u32(reader.by_ref(), b' ')?
         } else {
@@ -71,7 +77,7 @@ impl Collection {
         } else {
             0
         };
-        let (num_images, width, height) = if version == 0 {
+        let (num_images, global_width, global_height) = if version == 0 {
             try!(read_exactly(reader.by_ref(), b"w"));
             let width = try!(read_header_uint(reader.by_ref(), b' '));
             try!(read_exactly(reader.by_ref(), b"h"));
@@ -79,6 +85,10 @@ impl Collection {
             try!(read_exactly(reader.by_ref(), b"n"));
             let num_images = try!(read_header_uint(reader.by_ref(), b'\n'));
             (num_images as usize, width, height)
+        } else if flags & FLAG_INDIVIDUAL_DIMENSIONS != 0 {
+            read_exactly(reader.by_ref(), b"i")?;
+            let num_images = read_header_uint(reader.by_ref(), b'\n')?;
+            (num_images as usize, 0, 0)
         } else {
             read_exactly(reader.by_ref(), b"i")?;
             let num_images = read_header_uint(reader.by_ref(), b' ')?;
@@ -98,10 +108,19 @@ impl Collection {
         }
 
         let mut images = Vec::with_capacity(num_images);
-        let mut row_buffer = vec![0u8; width as usize];
         for _ in 0..num_images {
             try!(read_exactly(reader.by_ref(), b"\n"));
+            let (width, height) = if flags & FLAG_INDIVIDUAL_DIMENSIONS != 0 {
+                try!(read_exactly(reader.by_ref(), b"w"));
+                let width = try!(read_header_uint(reader.by_ref(), b' '));
+                try!(read_exactly(reader.by_ref(), b"h"));
+                let height = try!(read_header_uint(reader.by_ref(), b'\n'));
+                (width, height)
+            } else {
+                (global_width, global_height)
+            };
             let mut pixels = Vec::with_capacity((width * height) as usize);
+            let mut row_buffer = vec![0u8; width as usize];
             for _ in 0..height {
                 try!(reader.read_exact(&mut row_buffer));
                 for &byte in &row_buffer {
@@ -122,28 +141,47 @@ impl Collection {
         })
     }
 
-    /// Writes a collection to an AHI file.  Returns an error if the images
-    /// aren't all the same dimensions.
+    /// Writes a collection to an AHI file, automatically choosing the lowest
+    /// format version possible.
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        let version = if self.palettes.is_empty() { 0 } else { 1 };
-        let (width, height) = if self.images.is_empty() {
-            (0, 0)
+        let global_size = if self.images.is_empty() {
+            Some((0, 0))
         } else {
-            (self.images[0].width, self.images[0].height)
+            let mut size = Some((self.images[0].width, self.images[0].height));
+            for image in self.images.iter() {
+                if Some((image.width(), image.height())) != size {
+                    size = None;
+                    break;
+                }
+            }
+            size
+        };
+        let version = if self.palettes.is_empty() && global_size.is_some() {
+            0
+        } else {
+            1
         };
         if version == 0 {
+            let (width, height) = global_size.unwrap();
             try!(write!(writer,
                         "ahi0 w{} h{} n{}\n",
                         width,
                         height,
                         self.images.len()));
         } else {
+            let mut flags = 0;
+            if global_size.is_none() {
+                flags |= FLAG_INDIVIDUAL_DIMENSIONS;
+            }
             write!(writer,
-                   "ahi1 f0 p{} i{} w{} h{}\n",
+                   "ahi1 f{:X} p{} i{}",
+                   flags,
                    self.palettes.len(),
-                   self.images.len(),
-                   width,
-                   height)?;
+                   self.images.len())?;
+            if let Some((width, height)) = global_size {
+                write!(writer, " w{} h{}", width, height)?;
+            }
+            write!(writer, "\n")?;
         }
         if !self.palettes.is_empty() {
             write!(writer, "\n")?;
@@ -152,19 +190,14 @@ impl Collection {
             }
         }
         for image in self.images.iter() {
-            if image.width != width || image.height != height {
-                let msg = format!("images must all have the same dimensions \
-                                   (found {}x{} instead of {}x{})",
-                                  image.width,
-                                  image.height,
-                                  width,
-                                  height);
-                return Err(Error::new(ErrorKind::InvalidInput, msg));
-            }
             try!(write!(writer, "\n"));
-            for row in 0..height {
-                for col in 0..width {
-                    let color = image.pixels[(row * width + col) as usize];
+            if global_size.is_none() {
+                write!(writer, "w{} h{}\n", image.width(), image.height())?;
+            }
+            for row in 0..image.height() {
+                for col in 0..image.width() {
+                    let index = row * image.width() + col;
+                    let color = image.pixels[index as usize];
                     try!(writer.write_all(&[color.to_byte()]));
                 }
                 try!(write!(writer, "\n"));
@@ -213,8 +246,8 @@ mod tests {
     fn read_v1_collection_with_two_palettes_and_one_image() {
         let input: &[u8] = b"ahi1 f0 p2 i1 w2 h2\n\
                              \n\
-                             0;1;2;3;4;5;6;7;8;9;a;b;c;d;e;f\n\
-                             ;0;f00;f70;ff0;0f0;0ff;00f;70f;3;5;8;b;d;f0f;f\n\
+                             0;1;2;3;4;5;6;7;8;9;A;B;C;D;E;F\n\
+                             ;0;F00;F70;FF0;0F0;0FF;00F;70F;3;5;8;B;D;F0F;F\n\
                              \n\
                              E0\n\
                              0E\n";
@@ -226,6 +259,26 @@ mod tests {
                    (0xff, 0x0, 0xff, 0xff));
         assert_eq!(collection.images.len(), 1);
         assert_eq!(collection.images[0][(0, 0)], Color::Ce);
+    }
+
+    #[test]
+    fn read_v1_collection_with_two_images_of_different_sizes() {
+        let input: &[u8] = b"ahi1 f1 p0 i2\n\
+                             \n\
+                             w4 h2\n\
+                             2021\n\
+                             5D57\n\
+                             \n\
+                             w2 h3\n\
+                             E0\n\
+                             0E\n\
+                             F1\n";
+        let collection = Collection::read(input).unwrap();
+        assert_eq!(collection.images.len(), 2);
+        assert_eq!(collection.images[0].width(), 4);
+        assert_eq!(collection.images[0].height(), 2);
+        assert_eq!(collection.images[1].width(), 2);
+        assert_eq!(collection.images[1].height(), 3);
     }
 
     #[test]
@@ -245,14 +298,14 @@ mod tests {
         let expected: &[u8] =
             b"ahi1 f0 p2 i0 w0 h0\n\
               \n\
-              ;0;7f0000;f00;007f00;0f0;7f7f00;ff0;00007f;00f;\
-              7f007f;f0f;007f7f;0ff;7f;f\n\
+              ;0;7F0000;F00;007F00;0F0;7F7F00;FF0;00007F;00F;\
+              7F007F;F0F;007F7F;0FF;7F;F\n\
               0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0\n";
         assert_eq!(&output as &[u8], expected);
     }
 
     #[test]
-    fn write_collection_with_two_images() {
+    fn write_collection_with_two_images_of_same_size() {
         let mut collection = Collection::new();
         let mut image0 = Image::new(2, 2);
         image0[(0, 0)] = Color::C2;
@@ -273,6 +326,27 @@ mod tests {
                      \n\
                      E0\n\
                      0E\n");
+    }
+
+    #[test]
+    fn write_collection_with_two_images_of_different_sizes() {
+        let mut collection = Collection::new();
+        collection.images.push(Image::new(4, 2));
+        collection.images.push(Image::new(1, 3));
+        let mut output = Vec::<u8>::new();
+        collection.write(&mut output).unwrap();
+        let expected: &[u8] =
+            b"ahi1 f1 p0 i2\n\
+              \n\
+              w4 h2\n\
+              0000\n\
+              0000\n\
+              \n\
+              w1 h3\n\
+              0\n\
+              0\n\
+              0\n";
+        assert_eq!(&output as &[u8], expected);
     }
 }
 
