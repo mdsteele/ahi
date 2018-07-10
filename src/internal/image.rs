@@ -58,7 +58,7 @@ impl Image {
     pub fn rgba_data(&self, palette: &Palette) -> Vec<u8> {
         let mut data = Vec::with_capacity(self.pixels.len() * 4);
         for &color in self.pixels.iter() {
-            let (r, g, b, a) = palette.get(color);
+            let (r, g, b, a) = palette[color];
             data.push(r);
             data.push(g);
             data.push(b);

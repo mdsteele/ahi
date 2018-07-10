@@ -253,10 +253,9 @@ mod tests {
                              0E\n";
         let collection = Collection::read(input).unwrap();
         assert_eq!(collection.palettes.len(), 2);
-        assert_eq!(collection.palettes[0].get(Color::Ce),
+        assert_eq!(collection.palettes[0][Color::Ce],
                    (0xee, 0xee, 0xee, 0xff));
-        assert_eq!(collection.palettes[1].get(Color::Ce),
-                   (0xff, 0x0, 0xff, 0xff));
+        assert_eq!(collection.palettes[1][Color::Ce], (0xff, 0, 0xff, 0xff));
         assert_eq!(collection.images.len(), 1);
         assert_eq!(collection.images[0][(0, 0)], Color::Ce);
     }

@@ -20,6 +20,7 @@
 use internal::color::Color;
 use internal::util;
 use std::io::{self, Error, ErrorKind, Read, Write};
+use std::ops::{Index, IndexMut};
 
 // ========================================================================= //
 
@@ -35,16 +36,6 @@ impl Palette {
 
     /// Returns a reference to the default palette.
     pub fn default() -> &'static Palette { &DEFAULT_PALETTE }
-
-    /// Gets this palette's RGBA for the given color slot.
-    pub fn get(&self, color: Color) -> (u8, u8, u8, u8) {
-        self.rgba[color as usize]
-    }
-
-    /// Sets this palette's RGBA for the given color slot.
-    pub fn set(&mut self, color: Color, rgba: (u8, u8, u8, u8)) {
-        self.rgba[color as usize] = rgba;
-    }
 
     pub(crate) fn read<R: Read>(mut reader: R) -> io::Result<Palette> {
         let mut palette = Palette::new([(0u8, 0u8, 0u8, 0u8); 16]);
@@ -144,6 +135,19 @@ impl Palette {
     }
 }
 
+impl Index<Color> for Palette {
+    type Output = (u8, u8, u8, u8);
+    fn index(&self, color: Color) -> &(u8, u8, u8, u8) {
+        &self.rgba[color as usize]
+    }
+}
+
+impl IndexMut<Color> for Palette {
+    fn index_mut(&mut self, color: Color) -> &mut (u8, u8, u8, u8) {
+        &mut self.rgba[color as usize]
+    }
+}
+
 const DEFAULT_PALETTE: Palette = Palette {
     rgba: [
         (0, 0, 0, 0),
@@ -176,17 +180,17 @@ mod tests {
         let input: &[u8] =
             b"C;;7F;F00;1EBA;C2C7F;FF7F00;0;F;3F7FBF9;01234567;1;2;3;4;5\n";
         let palette = Palette::read(input).unwrap();
-        assert_eq!(palette.get(Color::C0), (0xcc, 0xcc, 0xcc, 0xff));
-        assert_eq!(palette.get(Color::C1), (0, 0, 0, 0));
-        assert_eq!(palette.get(Color::C2), (0x7f, 0x7f, 0x7f, 0xff));
-        assert_eq!(palette.get(Color::C3), (0xff, 0, 0, 0xff));
-        assert_eq!(palette.get(Color::C4), (0x11, 0xee, 0xbb, 0xaa));
-        assert_eq!(palette.get(Color::C5), (0xcc, 0x22, 0xcc, 0x7f));
-        assert_eq!(palette.get(Color::C6), (0xff, 0x7f, 0, 0xff));
-        assert_eq!(palette.get(Color::C7), (0, 0, 0, 0xff));
-        assert_eq!(palette.get(Color::C8), (0xff, 0xff, 0xff, 0xff));
-        assert_eq!(palette.get(Color::C9), (0x3f, 0x7f, 0xbf, 0x99));
-        assert_eq!(palette.get(Color::Ca), (0x01, 0x23, 0x45, 0x67));
+        assert_eq!(palette[Color::C0], (0xcc, 0xcc, 0xcc, 0xff));
+        assert_eq!(palette[Color::C1], (0, 0, 0, 0));
+        assert_eq!(palette[Color::C2], (0x7f, 0x7f, 0x7f, 0xff));
+        assert_eq!(palette[Color::C3], (0xff, 0, 0, 0xff));
+        assert_eq!(palette[Color::C4], (0x11, 0xee, 0xbb, 0xaa));
+        assert_eq!(palette[Color::C5], (0xcc, 0x22, 0xcc, 0x7f));
+        assert_eq!(palette[Color::C6], (0xff, 0x7f, 0, 0xff));
+        assert_eq!(palette[Color::C7], (0, 0, 0, 0xff));
+        assert_eq!(palette[Color::C8], (0xff, 0xff, 0xff, 0xff));
+        assert_eq!(palette[Color::C9], (0x3f, 0x7f, 0xbf, 0x99));
+        assert_eq!(palette[Color::Ca], (0x01, 0x23, 0x45, 0x67));
     }
 
     #[test]
