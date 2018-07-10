@@ -19,7 +19,9 @@
 
 use internal::color::Color;
 use internal::palette::Palette;
+use internal::util;
 use std::cmp::{max, min};
+use std::io::{self, Read, Write};
 use std::ops::{Index, IndexMut};
 
 // ========================================================================= //
@@ -188,6 +190,36 @@ impl Image {
         new_image.draw(self, 0, 0);
         new_image
     }
+
+    pub(crate) fn read<R: Read>(mut reader: R, width: u32, height: u32)
+                                -> io::Result<Image> {
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        let mut row_buffer = vec![0u8; width as usize];
+        for _ in 0..height {
+            reader.read_exact(&mut row_buffer)?;
+            for &byte in &row_buffer {
+                pixels.push(Color::from_byte(byte)?);
+            }
+            util::read_exactly(reader.by_ref(), b"\n")?;
+        }
+        Ok(Image {
+            width: width,
+            height: height,
+            pixels: pixels.into_boxed_slice(),
+        })
+    }
+
+    pub(crate) fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        for row in 0..self.height {
+            for col in 0..self.width {
+                let index = row * self.width + col;
+                let color = self.pixels[index as usize];
+                writer.write_all(&[color.to_byte()])?;
+            }
+            write!(writer, "\n")?;
+        }
+        Ok(())
+    }
 }
 
 impl Index<(u32, u32)> for Image {
@@ -215,7 +247,6 @@ impl IndexMut<(u32, u32)> for Image {
 
 #[cfg(test)]
 mod tests {
-    use internal::collect::Collection;
     use super::*;
 
     #[test]
@@ -285,16 +316,12 @@ mod tests {
 
     #[test]
     fn fill_contained_rect() {
-        let mut collection = Collection::new();
         let mut image = Image::new(5, 5);
         image.fill_rect(1, 1, 2, 2, Color::C3);
-        collection.images.push(image);
         let mut output = Vec::<u8>::new();
-        collection.write(&mut output).unwrap();
+        image.write(&mut output).unwrap();
         assert_eq!(&output as &[u8],
-                   b"ahi0 w5 h5 n1\n\
-                     \n\
-                     00000\n\
+                   b"00000\n\
                      03300\n\
                      03300\n\
                      00000\n\
@@ -303,42 +330,31 @@ mod tests {
 
     #[test]
     fn fill_overlapping_rect() {
-        let mut collection = Collection::new();
         let mut image = Image::new(5, 3);
         image.fill_rect(2, 1, 7, 7, Color::C3);
-        collection.images.push(image);
         let mut output = Vec::<u8>::new();
-        collection.write(&mut output).unwrap();
+        image.write(&mut output).unwrap();
         assert_eq!(&output as &[u8],
-                   b"ahi0 w5 h3 n1\n\
-                     \n\
-                     00000\n\
+                   b"00000\n\
                      00333\n\
                      00333\n" as &[u8]);
     }
 
     #[test]
     fn draw_overlapping() {
-        let input: &[u8] = b"ahi0 w5 h3 n2\n\
-                             \n\
-                             EEEEE\n\
-                             EEEEE\n\
-                             EEEEE\n\
-                             \n\
-                             01110\n\
-                             11011\n\
-                             01110\n";
-        let collection = Collection::read(input).unwrap();
-        let mut image = collection.images[0].clone();
-        image.draw(&collection.images[1], -1, 1);
-        let mut collection = Collection::new();
-        collection.images.push(image);
+        let input1: &[u8] = b"EEEEE\n\
+                              EEEEE\n\
+                              EEEEE\n";
+        let mut image1 = Image::read(input1, 5, 3).unwrap();
+        let input2: &[u8] = b"01110\n\
+                              11011\n\
+                              01110\n";
+        let image2 = Image::read(input2, 5, 3).unwrap();
+        image1.draw(&image2, -1, 1);
         let mut output = Vec::<u8>::new();
-        collection.write(&mut output).unwrap();
+        image1.write(&mut output).unwrap();
         assert_eq!(&output as &[u8],
-                   b"ahi0 w5 h3 n1\n\
-                     \n\
-                     EEEEE\n\
+                   b"EEEEE\n\
                      111EE\n\
                      1E11E\n" as &[u8]);
     }

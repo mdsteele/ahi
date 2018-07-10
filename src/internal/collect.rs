@@ -17,7 +17,6 @@
 // | with AHI.  If not, see <http://www.gnu.org/licenses/>.                   |
 // +--------------------------------------------------------------------------+
 
-use internal::color::Color;
 use internal::image::Image;
 use internal::palette::Palette;
 use internal::util::{read_exactly, read_header_uint, read_hex_u32};
@@ -119,20 +118,7 @@ impl Collection {
             } else {
                 (global_width, global_height)
             };
-            let mut pixels = Vec::with_capacity((width * height) as usize);
-            let mut row_buffer = vec![0u8; width as usize];
-            for _ in 0..height {
-                try!(reader.read_exact(&mut row_buffer));
-                for &byte in &row_buffer {
-                    pixels.push(try!(Color::from_byte(byte)));
-                }
-                try!(read_exactly(reader.by_ref(), b"\n"));
-            }
-            images.push(Image {
-                width: width,
-                height: height,
-                pixels: pixels.into_boxed_slice(),
-            })
+            images.push(Image::read(reader.by_ref(), width, height)?);
         }
 
         Ok(Collection {
@@ -194,14 +180,7 @@ impl Collection {
             if global_size.is_none() {
                 write!(writer, "w{} h{}\n", image.width(), image.height())?;
             }
-            for row in 0..image.height() {
-                for col in 0..image.width() {
-                    let index = row * image.width() + col;
-                    let color = image.pixels[index as usize];
-                    try!(writer.write_all(&[color.to_byte()]));
-                }
-                try!(write!(writer, "\n"));
-            }
+            image.write(writer.by_ref())?;
         }
         Ok(())
     }
@@ -211,6 +190,7 @@ impl Collection {
 
 #[cfg(test)]
 mod tests {
+    use internal::color::Color;
     use super::*;
 
     #[test]
