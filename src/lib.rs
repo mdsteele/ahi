@@ -131,8 +131,8 @@ pub use internal::collect::Collection;
 pub use internal::color::Color;
 pub use internal::image::Image;
 pub use internal::palette::Palette;
-use internal::util::{read_char_escape, read_exactly, read_header_int,
-                     read_header_uint};
+use internal::util::{read_exactly, read_header_int, read_header_uint,
+                     read_quoted_char};
 use std::collections::{BTreeMap, btree_map};
 use std::io::{self, Error, ErrorKind, Read, Write};
 use std::ops::Deref;
@@ -317,9 +317,9 @@ impl Font {
 
         let mut glyphs = BTreeMap::new();
         for _ in 0..num_glyphs {
-            try!(read_exactly(reader.by_ref(), b"\n'"));
-            let chr = try!(read_char_escape(reader.by_ref()));
-            try!(read_exactly(reader.by_ref(), b"' "));
+            try!(read_exactly(reader.by_ref(), b"\n"));
+            let chr = try!(read_quoted_char(reader.by_ref()));
+            try!(read_exactly(reader.by_ref(), b" "));
             let glyph = try!(Font::read_glyph(reader.by_ref(), height));
             glyphs.insert(chr, Rc::new(glyph));
         }
@@ -347,6 +347,7 @@ impl Font {
             try!(read_exactly(reader.by_ref(), b"\n"));
         }
         let image = Image {
+            tag: String::new(),
             width: width,
             height: height,
             pixels: pixels.into_boxed_slice(),

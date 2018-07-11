@@ -19,7 +19,8 @@
 
 use internal::image::Image;
 use internal::palette::Palette;
-use internal::util::{read_exactly, read_header_uint, read_hex_u32};
+use internal::util::{read_exactly, read_header_uint, read_hex_u32,
+                     read_quoted_string};
 use std::io::{self, Error, ErrorKind, Read, Write};
 
 // ========================================================================= //
@@ -27,14 +28,14 @@ use std::io::{self, Error, ErrorKind, Read, Write};
 // TODO: Add support for ahi1 format:
 // - [DONE] Allow storing palettes as well as images
 // - [DONE] Allow storing a different width/height for each image
-// - Allow storing string tags for each image
+// - [DONE] Allow storing string tags for each image
 // - Allow storing a vector of metadata i32s for each image
 
 // TODO: Support BHI format, which is a binary encoding of an AHI file, with
 // compressed image data.
 
 const FLAG_INDIVIDUAL_DIMENSIONS: u32 = 1;
-// TODO: const FLAG_STRING_TAGS: u32 = 2;
+const FLAG_STRING_TAGS: u32 = 2;
 // TODO: const FLAG_METADATA_INTS: u32 = 4;
 
 // ========================================================================= //
@@ -108,7 +109,14 @@ impl Collection {
 
         let mut images = Vec::with_capacity(num_images);
         for _ in 0..num_images {
-            try!(read_exactly(reader.by_ref(), b"\n"));
+            read_exactly(reader.by_ref(), b"\n")?;
+            let tag = if flags & FLAG_STRING_TAGS != 0 {
+                let tag = read_quoted_string(reader.by_ref())?;
+                read_exactly(reader.by_ref(), b"\n")?;
+                tag
+            } else {
+                String::new()
+            };
             let (width, height) = if flags & FLAG_INDIVIDUAL_DIMENSIONS != 0 {
                 try!(read_exactly(reader.by_ref(), b"w"));
                 let width = try!(read_header_uint(reader.by_ref(), b' '));
@@ -118,7 +126,9 @@ impl Collection {
             } else {
                 (global_width, global_height)
             };
-            images.push(Image::read(reader.by_ref(), width, height)?);
+            let mut image = Image::read(reader.by_ref(), width, height)?;
+            image.set_tag(tag);
+            images.push(image);
         }
 
         Ok(Collection {
@@ -133,7 +143,8 @@ impl Collection {
         let global_size = if self.images.is_empty() {
             Some((0, 0))
         } else {
-            let mut size = Some((self.images[0].width, self.images[0].height));
+            let mut size = Some((self.images[0].width(),
+                                 self.images[0].height()));
             for image in self.images.iter() {
                 if Some((image.width(), image.height())) != size {
                     size = None;
@@ -142,7 +153,16 @@ impl Collection {
             }
             size
         };
-        let version = if self.palettes.is_empty() && global_size.is_some() {
+        let mut has_string_tags = false;
+        for image in self.images.iter() {
+            if !image.tag().is_empty() {
+                has_string_tags = true;
+                break;
+            }
+        }
+        let version = if self.palettes.is_empty() && global_size.is_some() &&
+            !has_string_tags
+        {
             0
         } else {
             1
@@ -158,6 +178,9 @@ impl Collection {
             let mut flags = 0;
             if global_size.is_none() {
                 flags |= FLAG_INDIVIDUAL_DIMENSIONS;
+            }
+            if has_string_tags {
+                flags |= FLAG_STRING_TAGS;
             }
             write!(writer,
                    "ahi1 f{:X} p{} i{}",
@@ -177,6 +200,13 @@ impl Collection {
         }
         for image in self.images.iter() {
             try!(write!(writer, "\n"));
+            if has_string_tags {
+                let mut escaped = String::new();
+                for chr in image.tag().chars() {
+                    escaped.push_str(&chr.escape_default().collect::<String>());
+                }
+                write!(writer, "\"{}\"\n", escaped)?;
+            }
             if global_size.is_none() {
                 write!(writer, "w{} h{}\n", image.width(), image.height())?;
             }
@@ -241,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn read_v1_collection_with_two_images_of_different_sizes() {
+    fn read_v1_collection_with_two_different_sized_images() {
         let input: &[u8] = b"ahi1 f1 p0 i2\n\
                              \n\
                              w4 h2\n\
@@ -258,6 +288,24 @@ mod tests {
         assert_eq!(collection.images[0].height(), 2);
         assert_eq!(collection.images[1].width(), 2);
         assert_eq!(collection.images[1].height(), 3);
+    }
+
+    #[test]
+    fn read_v1_collection_with_string_tags() {
+        let input: &[u8] =
+            b"ahi1 f2 p0 i2 w2 h2\n\
+              \n\
+              \"foo\"\n\
+              00\n\
+              00\n\
+              \n\
+              \"Snowman\\u{2603}\"\n\
+              00\n\
+              00\n";
+        let collection = Collection::read(input).unwrap();
+        assert_eq!(collection.images.len(), 2);
+        assert_eq!(collection.images[0].tag(), "foo");
+        assert_eq!(collection.images[1].tag(), "Snowman\u{2603}");
     }
 
     #[test]
@@ -284,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn write_collection_with_two_images_of_same_size() {
+    fn write_collection_with_same_sized_images() {
         let mut collection = Collection::new();
         let mut image0 = Image::new(2, 2);
         image0[(0, 0)] = Color::C2;
@@ -308,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn write_collection_with_two_images_of_different_sizes() {
+    fn write_collection_with_different_sized_images() {
         let mut collection = Collection::new();
         collection.images.push(Image::new(4, 2));
         collection.images.push(Image::new(1, 3));
@@ -325,6 +373,28 @@ mod tests {
               0\n\
               0\n\
               0\n";
+        assert_eq!(&output as &[u8], expected);
+    }
+
+    #[test]
+    fn write_collection_with_with_string_tags() {
+        let mut collection = Collection::new();
+        collection.images.push(Image::new(2, 2));
+        collection.images[0].set_tag("foo".to_string());
+        collection.images.push(Image::new(2, 2));
+        collection.images[1].set_tag("Snowman\u{2603}".to_string());
+        let mut output = Vec::<u8>::new();
+        collection.write(&mut output).unwrap();
+        let expected: &[u8] =
+            b"ahi1 f2 p0 i2 w2 h2\n\
+              \n\
+              \"foo\"\n\
+              00\n\
+              00\n\
+              \n\
+              \"Snowman\\u{2603}\"\n\
+              00\n\
+              00\n";
         assert_eq!(&output as &[u8], expected);
     }
 }

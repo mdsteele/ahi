@@ -22,41 +22,48 @@ use std::io::{self, Error, ErrorKind, Read};
 
 // ========================================================================= //
 
-pub(crate) fn read_char_escape<R: Read>(mut reader: R) -> io::Result<char> {
+const MAX_HEADER_VALUE: i32 = 0xFFFF;
+
+// ========================================================================= //
+
+fn read_char_escape<R: Read>(mut reader: R, quote: u8)
+                             -> io::Result<Option<char>> {
     let mut buffer = vec![0u8];
     try!(reader.read_exact(&mut buffer));
     let byte = buffer[0];
-    if byte == b'\\' {
+    if byte == quote {
+        Ok(None)
+    } else if byte == b'\\' {
         try!(reader.read_exact(&mut buffer));
         let esc = buffer[0];
         if esc == b'\\' {
-            Ok('\\')
+            Ok(Some('\\'))
         } else if esc == b'\'' {
-            Ok('\'')
+            Ok(Some('\''))
         } else if esc == b'"' {
-            Ok('"')
+            Ok(Some('"'))
         } else if esc == b'n' {
-            Ok('\n')
+            Ok(Some('\n'))
         } else if esc == b'r' {
-            Ok('\r')
+            Ok(Some('\r'))
         } else if esc == b't' {
-            Ok('\t')
+            Ok(Some('\t'))
         } else if esc == b'u' {
             try!(read_exactly(reader.by_ref(), b"{"));
             let value = try!(read_hex_u32(reader.by_ref(), b'}'));
             char::from_u32(value).ok_or_else(|| {
                 let msg = format!("invalid unicode value: {}", value);
                 Error::new(ErrorKind::InvalidData, msg)
-            })
+            }).map(Some)
         } else {
             let msg = format!("invalid char escape: {}", esc);
             Err(Error::new(ErrorKind::InvalidData, msg))
         }
-    } else if byte < b' ' || byte > b'~' || byte == b'\'' {
+    } else if byte < b' ' || byte > b'~' {
         let msg = format!("invalid char literal byte: {}", byte);
         Err(Error::new(ErrorKind::InvalidData, msg))
     } else {
-        Ok(char::from_u32(byte as u32).unwrap())
+        Ok(Some(char::from_u32(byte as u32).unwrap()))
     }
 }
 
@@ -73,8 +80,6 @@ pub(crate) fn read_exactly<R: Read>(mut reader: R, expected: &[u8])
         Ok(())
     }
 }
-
-const MAX_HEADER_VALUE: i32 = 0xFFFF;
 
 pub(crate) fn read_header_int<R: Read>(reader: R, terminator: u8)
                                        -> io::Result<i32> {
@@ -164,6 +169,26 @@ pub(crate) fn read_hex_u32<R: Read>(reader: R, terminator: u8)
         value = value * 0x10 + digit as u32;
     }
     Ok(value)
+}
+
+pub(crate) fn read_quoted_char<R: Read>(mut reader: R) -> io::Result<char> {
+    read_exactly(reader.by_ref(), b"\'")?;
+    if let Some(chr) = read_char_escape(reader.by_ref(), b'\'')? {
+        read_exactly(reader.by_ref(), b"\'")?;
+        Ok(chr)
+    } else {
+        Err(Error::new(ErrorKind::InvalidData, "empty char literal"))
+    }
+}
+
+pub(crate) fn read_quoted_string<R: Read>(mut reader: R)
+                                          -> io::Result<String> {
+    read_exactly(reader.by_ref(), b"\"")?;
+    let mut string = String::new();
+    while let Some(chr) = read_char_escape(reader.by_ref(), b'"')? {
+        string.push(chr);
+    }
+    Ok(string)
 }
 
 // ========================================================================= //

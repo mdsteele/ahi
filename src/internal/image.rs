@@ -29,6 +29,7 @@ use std::ops::{Index, IndexMut};
 /// Represents a single ASCII Hex Image.
 #[derive(Clone)]
 pub struct Image {
+    pub(crate) tag: String,
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) pixels: Box<[Color]>,
@@ -39,21 +40,25 @@ impl Image {
     pub fn new(width: u32, height: u32) -> Image {
         let num_pixels = (width * height) as usize;
         return Image {
+            tag: String::new(),
             width: width,
             height: height,
             pixels: vec![Color::C0; num_pixels].into_boxed_slice(),
         };
     }
 
+    /// Returns the string tag for this image (or empty string if it doesn't
+    /// have one).
+    pub fn tag(&self) -> &str { &self.tag }
+
+    /// Sets the string tag for this image.
+    pub fn set_tag(&mut self, tag: String) { self.tag = tag; }
+
     /// Returns the width of the image, in pixels.
-    pub fn width(&self) -> u32 {
-        self.width
-    }
+    pub fn width(&self) -> u32 { self.width }
 
     /// Returns the height of the image, in pixels.
-    pub fn height(&self) -> u32 {
-        self.height
-    }
+    pub fn height(&self) -> u32 { self.height }
 
     /// Returns a byte array containing RGBA-order data for the image pixels,
     /// in row-major order.
@@ -125,6 +130,7 @@ impl Image {
             }
         }
         Image {
+            tag: self.tag.clone(),
             width: self.width,
             height: self.height,
             pixels: pixels.into_boxed_slice(),
@@ -142,6 +148,7 @@ impl Image {
             }
         }
         Image {
+            tag: self.tag.clone(),
             width: self.width,
             height: self.height,
             pixels: pixels.into_boxed_slice(),
@@ -158,6 +165,7 @@ impl Image {
             }
         }
         Image {
+            tag: self.tag.clone(),
             width: self.height,
             height: self.width,
             pixels: pixels.into_boxed_slice(),
@@ -175,6 +183,7 @@ impl Image {
             }
         }
         Image {
+            tag: self.tag.clone(),
             width: self.height,
             height: self.width,
             pixels: pixels.into_boxed_slice(),
@@ -203,6 +212,7 @@ impl Image {
             util::read_exactly(reader.by_ref(), b"\n")?;
         }
         Ok(Image {
+            tag: String::new(),
             width: width,
             height: height,
             pixels: pixels.into_boxed_slice(),
