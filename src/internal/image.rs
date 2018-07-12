@@ -30,6 +30,7 @@ use std::ops::{Index, IndexMut};
 #[derive(Clone)]
 pub struct Image {
     pub(crate) tag: String,
+    pub(crate) metadata: Vec<i16>,
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) pixels: Box<[Color]>,
@@ -41,6 +42,7 @@ impl Image {
         let num_pixels = (width * height) as usize;
         return Image {
             tag: String::new(),
+            metadata: Vec::new(),
             width: width,
             height: height,
             pixels: vec![Color::C0; num_pixels].into_boxed_slice(),
@@ -52,7 +54,17 @@ impl Image {
     pub fn tag(&self) -> &str { &self.tag }
 
     /// Sets the string tag for this image.
-    pub fn set_tag(&mut self, tag: String) { self.tag = tag; }
+    pub fn set_tag<S: Into<String>>(&mut self, tag: S) {
+        self.tag = tag.into();
+    }
+
+    /// Returns the integer metadata for this image (if any).
+    pub fn metadata(&self) -> &[i16] { &self.metadata }
+
+    /// Sets the integer metadata for this image.
+    pub fn set_metadata(&mut self, metadata: Vec<i16>) {
+        self.metadata = metadata;
+    }
 
     /// Returns the width of the image, in pixels.
     pub fn width(&self) -> u32 { self.width }
@@ -131,6 +143,7 @@ impl Image {
         }
         Image {
             tag: self.tag.clone(),
+            metadata: self.metadata.clone(),
             width: self.width,
             height: self.height,
             pixels: pixels.into_boxed_slice(),
@@ -149,6 +162,7 @@ impl Image {
         }
         Image {
             tag: self.tag.clone(),
+            metadata: self.metadata.clone(),
             width: self.width,
             height: self.height,
             pixels: pixels.into_boxed_slice(),
@@ -166,6 +180,7 @@ impl Image {
         }
         Image {
             tag: self.tag.clone(),
+            metadata: self.metadata.clone(),
             width: self.height,
             height: self.width,
             pixels: pixels.into_boxed_slice(),
@@ -184,6 +199,7 @@ impl Image {
         }
         Image {
             tag: self.tag.clone(),
+            metadata: self.metadata.clone(),
             width: self.height,
             height: self.width,
             pixels: pixels.into_boxed_slice(),
@@ -213,6 +229,7 @@ impl Image {
         }
         Ok(Image {
             tag: String::new(),
+            metadata: Vec::new(),
             width: width,
             height: height,
             pixels: pixels.into_boxed_slice(),

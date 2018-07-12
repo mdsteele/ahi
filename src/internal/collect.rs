@@ -20,23 +20,19 @@
 use internal::image::Image;
 use internal::palette::Palette;
 use internal::util::{read_exactly, read_header_uint, read_hex_u32,
-                     read_quoted_string};
+                     read_list_of_i16s, read_quoted_string};
 use std::io::{self, Error, ErrorKind, Read, Write};
 
 // ========================================================================= //
 
-// TODO: Add support for ahi1 format:
-// - [DONE] Allow storing palettes as well as images
-// - [DONE] Allow storing a different width/height for each image
-// - [DONE] Allow storing string tags for each image
-// - Allow storing a vector of metadata i32s for each image
+// TODO: Allow zero-sized images
 
 // TODO: Support BHI format, which is a binary encoding of an AHI file, with
 // compressed image data.
 
 const FLAG_INDIVIDUAL_DIMENSIONS: u32 = 1;
 const FLAG_STRING_TAGS: u32 = 2;
-// TODO: const FLAG_METADATA_INTS: u32 = 4;
+const FLAG_METADATA_INTS: u32 = 4;
 
 // ========================================================================= //
 
@@ -117,6 +113,13 @@ impl Collection {
             } else {
                 String::new()
             };
+            let metadata = if flags & FLAG_METADATA_INTS != 0 {
+                let metadata = read_list_of_i16s(reader.by_ref())?;
+                read_exactly(reader.by_ref(), b"\n")?;
+                metadata
+            } else {
+                Vec::new()
+            };
             let (width, height) = if flags & FLAG_INDIVIDUAL_DIMENSIONS != 0 {
                 try!(read_exactly(reader.by_ref(), b"w"));
                 let width = try!(read_header_uint(reader.by_ref(), b' '));
@@ -128,6 +131,7 @@ impl Collection {
             };
             let mut image = Image::read(reader.by_ref(), width, height)?;
             image.set_tag(tag);
+            image.set_metadata(metadata);
             images.push(image);
         }
 
@@ -160,8 +164,15 @@ impl Collection {
                 break;
             }
         }
+        let mut has_metadata = false;
+        for image in self.images.iter() {
+            if !image.metadata().is_empty() {
+                has_metadata = true;
+                break;
+            }
+        }
         let version = if self.palettes.is_empty() && global_size.is_some() &&
-            !has_string_tags
+            !has_string_tags && !has_metadata
         {
             0
         } else {
@@ -181,6 +192,9 @@ impl Collection {
             }
             if has_string_tags {
                 flags |= FLAG_STRING_TAGS;
+            }
+            if has_metadata {
+                flags |= FLAG_METADATA_INTS;
             }
             write!(writer,
                    "ahi1 f{:X} p{} i{}",
@@ -203,9 +217,23 @@ impl Collection {
             if has_string_tags {
                 let mut escaped = String::new();
                 for chr in image.tag().chars() {
-                    escaped.push_str(&chr.escape_default().collect::<String>());
+                    escaped.push_str(
+                        &chr.escape_default().collect::<String>());
                 }
                 write!(writer, "\"{}\"\n", escaped)?;
+            }
+            if has_metadata {
+                write!(writer, "[")?;
+                let mut first = true;
+                for &value in image.metadata().iter() {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(writer, ", ")?;
+                    }
+                    write!(writer, "{}", value)?;
+                }
+                write!(writer, "]\n")?;
             }
             if global_size.is_none() {
                 write!(writer, "w{} h{}\n", image.width(), image.height())?;
@@ -293,19 +321,60 @@ mod tests {
     #[test]
     fn read_v1_collection_with_string_tags() {
         let input: &[u8] =
-            b"ahi1 f2 p0 i2 w2 h2\n\
+            b"ahi1 f2 p0 i2 w2 h1\n\
               \n\
               \"foo\"\n\
               00\n\
-              00\n\
               \n\
               \"Snowman\\u{2603}\"\n\
-              00\n\
               00\n";
         let collection = Collection::read(input).unwrap();
         assert_eq!(collection.images.len(), 2);
         assert_eq!(collection.images[0].tag(), "foo");
         assert_eq!(collection.images[1].tag(), "Snowman\u{2603}");
+    }
+
+    #[test]
+    fn read_v1_collection_with_metadata() {
+        let input: &[u8] =
+            b"ahi1 f4 p0 i2 w2 h1\n\
+              \n\
+              [1, -2, 3]\n\
+              00\n\
+              \n\
+              [4, 5]\n\
+              00\n";
+        let collection = Collection::read(input).unwrap();
+        assert_eq!(collection.images.len(), 2);
+        assert_eq!(collection.images[0].metadata(), &[1, -2, 3]);
+        assert_eq!(collection.images[1].metadata(), &[4, 5]);
+    }
+
+    #[test]
+    fn read_v1_collection_with_all_flags() {
+        let input: &[u8] =
+            b"ahi1 f7 p0 i2\n\
+              \n\
+              \"\"\n\
+              [1, -2, 3]\n\
+              w3 h1\n\
+              000\n\
+              \n\
+              \"foobar\"\n\
+              []\n\
+              w1 h2\n\
+              0\n\
+              0\n";
+        let collection = Collection::read(input).unwrap();
+        assert_eq!(collection.images.len(), 2);
+        assert_eq!(collection.images[0].tag(), "");
+        assert_eq!(collection.images[0].metadata(), &[1, -2, 3]);
+        assert_eq!(collection.images[0].width(), 3);
+        assert_eq!(collection.images[0].height(), 1);
+        assert_eq!(collection.images[1].tag(), "foobar");
+        assert_eq!(collection.images[1].metadata(), &[]);
+        assert_eq!(collection.images[1].width(), 1);
+        assert_eq!(collection.images[1].height(), 2);
     }
 
     #[test]
@@ -379,22 +448,65 @@ mod tests {
     #[test]
     fn write_collection_with_with_string_tags() {
         let mut collection = Collection::new();
-        collection.images.push(Image::new(2, 2));
-        collection.images[0].set_tag("foo".to_string());
-        collection.images.push(Image::new(2, 2));
-        collection.images[1].set_tag("Snowman\u{2603}".to_string());
+        collection.images.push(Image::new(2, 1));
+        collection.images[0].set_tag("foo");
+        collection.images.push(Image::new(2, 1));
+        collection.images[1].set_tag("Snowman\u{2603}");
         let mut output = Vec::<u8>::new();
         collection.write(&mut output).unwrap();
         let expected: &[u8] =
-            b"ahi1 f2 p0 i2 w2 h2\n\
+            b"ahi1 f2 p0 i2 w2 h1\n\
               \n\
               \"foo\"\n\
               00\n\
-              00\n\
               \n\
               \"Snowman\\u{2603}\"\n\
-              00\n\
               00\n";
+        assert_eq!(&output as &[u8], expected);
+    }
+
+    #[test]
+    fn write_collection_with_with_metadata_ints() {
+        let mut collection = Collection::new();
+        collection.images.push(Image::new(2, 1));
+        collection.images[0].set_metadata(vec![1, -2, 3]);
+        collection.images.push(Image::new(2, 1));
+        collection.images[1].set_metadata(vec![4, 5]);
+        let mut output = Vec::<u8>::new();
+        collection.write(&mut output).unwrap();
+        let expected: &[u8] =
+            b"ahi1 f4 p0 i2 w2 h1\n\
+              \n\
+              [1, -2, 3]\n\
+              00\n\
+              \n\
+              [4, 5]\n\
+              00\n";
+        assert_eq!(&output as &[u8], expected);
+    }
+
+    #[test]
+    fn write_collection_with_all_flags() {
+        let mut collection = Collection::new();
+        collection.images.push(Image::new(3, 1));
+        collection.images[0].set_metadata(vec![1, -2, 3]);
+        collection.images.push(Image::new(1, 2));
+        collection.images[1].set_tag("foobar");
+        let mut output = Vec::<u8>::new();
+        collection.write(&mut output).unwrap();
+        let expected: &[u8] =
+            b"ahi1 f7 p0 i2\n\
+              \n\
+              \"\"\n\
+              [1, -2, 3]\n\
+              w3 h1\n\
+              000\n\
+              \n\
+              \"foobar\"\n\
+              []\n\
+              w1 h2\n\
+              0\n\
+              0\n";
         assert_eq!(&output as &[u8], expected);
     }
 }

@@ -348,6 +348,7 @@ impl Font {
         }
         let image = Image {
             tag: String::new(),
+            metadata: Vec::new(),
             width: width,
             height: height,
             pixels: pixels.into_boxed_slice(),

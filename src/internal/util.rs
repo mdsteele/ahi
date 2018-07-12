@@ -18,6 +18,7 @@
 // +--------------------------------------------------------------------------+
 
 use std::char;
+use std::i16;
 use std::io::{self, Error, ErrorKind, Read};
 
 // ========================================================================= //
@@ -169,6 +170,64 @@ pub(crate) fn read_hex_u32<R: Read>(reader: R, terminator: u8)
         value = value * 0x10 + digit as u32;
     }
     Ok(value)
+}
+
+pub(crate) fn read_list_of_i16s<R: Read>(mut reader: R)
+                                         -> io::Result<Vec<i16>> {
+    read_exactly(reader.by_ref(), b"[")?;
+    let mut values = Vec::<i16>::new();
+    let mut done = false;
+    while !done {
+        let mut negative = false;
+        let mut any_digits = false;
+        let mut value: i32 = 0;
+        for byte in reader.by_ref().bytes() {
+            let byte = byte?;
+            if byte == b']' || byte == b',' {
+                if !any_digits && (byte == b',' || !values.is_empty()) {
+                    let msg = "missing integer in list";
+                    return Err(Error::new(ErrorKind::InvalidData, msg));
+                }
+                if byte == b']' {
+                    done = true;
+                }
+                break;
+            } else if byte == b'-' {
+                if negative || any_digits {
+                    let msg = "misplaced minus sign in integer list";
+                    return Err(Error::new(ErrorKind::InvalidData, msg));
+                }
+                negative = true;
+            } else if byte < b'0' || byte > b'9' {
+                let msg = format!("invalid byte in list integer: '{}'",
+                                  String::from_utf8_lossy(&[byte]));
+                return Err(Error::new(ErrorKind::InvalidData, msg));
+            } else {
+                value = value * 10 + (byte - b'0') as i32;
+                any_digits = true;
+                if value > 0x8000 {
+                    break;
+                }
+            }
+        }
+        if any_digits {
+            if negative {
+                value = -value;
+            }
+            if value > (i16::MAX as i32) || value < (i16::MIN as i32) {
+                let msg = "list integer value is out of range";
+                return Err(Error::new(ErrorKind::InvalidData, msg));
+            }
+            values.push(value as i16);
+            if !done {
+                read_exactly(reader.by_ref(), b" ")?;
+            }
+        } else {
+            debug_assert!(values.is_empty());
+            debug_assert!(done);
+        }
+    }
+    Ok(values)
 }
 
 pub(crate) fn read_quoted_char<R: Read>(mut reader: R) -> io::Result<char> {
