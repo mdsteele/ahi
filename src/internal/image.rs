@@ -219,13 +219,15 @@ impl Image {
     pub(crate) fn read<R: Read>(mut reader: R, width: u32, height: u32)
                                 -> io::Result<Image> {
         let mut pixels = Vec::with_capacity((width * height) as usize);
-        let mut row_buffer = vec![0u8; width as usize];
-        for _ in 0..height {
-            reader.read_exact(&mut row_buffer)?;
-            for &byte in &row_buffer {
-                pixels.push(Color::from_byte(byte)?);
+        if width > 0 && height > 0 {
+            let mut row_buffer = vec![0u8; width as usize];
+            for _ in 0..height {
+                reader.read_exact(&mut row_buffer)?;
+                for &byte in &row_buffer {
+                    pixels.push(Color::from_byte(byte)?);
+                }
+                util::read_exactly(reader.by_ref(), b"\n")?;
             }
-            util::read_exactly(reader.by_ref(), b"\n")?;
         }
         Ok(Image {
             tag: String::new(),
@@ -237,13 +239,15 @@ impl Image {
     }
 
     pub(crate) fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        for row in 0..self.height {
-            for col in 0..self.width {
-                let index = row * self.width + col;
-                let color = self.pixels[index as usize];
-                writer.write_all(&[color.to_byte()])?;
+        if self.width > 0 && self.height > 0 {
+            for row in 0..self.height {
+                for col in 0..self.width {
+                    let index = row * self.width + col;
+                    let color = self.pixels[index as usize];
+                    writer.write_all(&[color.to_byte()])?;
+                }
+                write!(writer, "\n")?;
             }
-            write!(writer, "\n")?;
         }
         Ok(())
     }

@@ -25,8 +25,6 @@ use std::io::{self, Error, ErrorKind, Read, Write};
 
 // ========================================================================= //
 
-// TODO: Allow zero-sized images
-
 // TODO: Support BHI format, which is a binary encoding of an AHI file, with
 // compressed image data.
 
@@ -319,6 +317,37 @@ mod tests {
     }
 
     #[test]
+    fn read_v1_collection_with_some_images_empty() {
+        let input: &[u8] =
+            b"ahi1 f1 p0 i5\n\
+              \n\
+              w4 h1\n\
+              0000\n\
+              \n\
+              w4 h0\n\
+              \n\
+              w3 h1\n\
+              000\n\
+              \n\
+              w0 h4\n\
+              \n\
+              w2 h1\n\
+              00\n";
+        let collection = Collection::read(input).unwrap();
+        assert_eq!(collection.images.len(), 5);
+        assert_eq!(collection.images[0].width(), 4);
+        assert_eq!(collection.images[0].height(), 1);
+        assert_eq!(collection.images[1].width(), 4);
+        assert_eq!(collection.images[1].height(), 0);
+        assert_eq!(collection.images[2].width(), 3);
+        assert_eq!(collection.images[2].height(), 1);
+        assert_eq!(collection.images[3].width(), 0);
+        assert_eq!(collection.images[3].height(), 4);
+        assert_eq!(collection.images[4].width(), 2);
+        assert_eq!(collection.images[4].height(), 1);
+    }
+
+    #[test]
     fn read_v1_collection_with_string_tags() {
         let input: &[u8] =
             b"ahi1 f2 p0 i2 w2 h1\n\
@@ -442,6 +471,34 @@ mod tests {
               0\n\
               0\n\
               0\n";
+        assert_eq!(&output as &[u8], expected);
+    }
+
+    #[test]
+    fn write_collection_with_some_images_empty() {
+        let mut collection = Collection::new();
+        collection.images.push(Image::new(4, 1));
+        collection.images.push(Image::new(4, 0));
+        collection.images.push(Image::new(3, 1));
+        collection.images.push(Image::new(0, 4));
+        collection.images.push(Image::new(2, 1));
+        let mut output = Vec::<u8>::new();
+        collection.write(&mut output).unwrap();
+        let expected: &[u8] =
+            b"ahi1 f1 p0 i5\n\
+              \n\
+              w4 h1\n\
+              0000\n\
+              \n\
+              w4 h0\n\
+              \n\
+              w3 h1\n\
+              000\n\
+              \n\
+              w0 h4\n\
+              \n\
+              w2 h1\n\
+              00\n";
         assert_eq!(&output as &[u8], expected);
     }
 
