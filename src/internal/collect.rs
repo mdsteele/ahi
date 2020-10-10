@@ -27,6 +27,53 @@ use std::io::{self, Error, ErrorKind, Read, Write};
 
 // TODO: Support BHI format, which is a binary encoding of an AHI file, with
 // compressed image data.
+//
+// Header:
+// +------------+---------+-------+--------------+------------+
+// | 4 bytes    | u16     | u16   | u16          | u16        |
+// +------------+---------+-------+--------------+------------+
+// | "[ESC]bhi" | version | flags | num_palettes | num_images |
+// +------------+---------+-------+--------------+------------+
+//
+// Global size (if flag 1 is unset):
+// +-------+--------+
+// | u16   | u16    |
+// +-------+--------+
+// | width | height |
+// +-------+--------+
+//
+// Palette (repeated num_palettes times):
+// +-----------+
+// | u32  x 16 |
+// +-----------+
+// | RGBA x 16 |
+// +-----------+
+//
+// Image (repeated num_images times):
+// Tag (if flag 2 is set):
+// +--------+--------------+
+// | u16    | u8 x length  |
+// +--------+--------------+
+// | length | utf-8        |
+// +--------+--------------+
+// Metadata (if flag 4 is set):
+// +--------+--------------+
+// | u16    | i16 x length |
+// +--------+--------------+
+// | length | metadata     |
+// +--------+--------------+
+// Image size (if flag 1 is set):
+// +-------+--------+
+// | u16   | u16    |
+// +-------+--------+
+// | width | height |
+// +-------+--------+
+// Image data:
+// +-------------------------------+
+// | u8 x ceil(width * height / 2) |
+// +-------------------------------+
+// | image data                    |
+// +-------------------------------+
 
 const FLAG_INDIVIDUAL_DIMENSIONS: u32 = 1;
 const FLAG_STRING_TAGS: u32 = 2;
