@@ -43,15 +43,17 @@ impl Image {
         return Image {
             tag: String::new(),
             metadata: Vec::new(),
-            width: width,
-            height: height,
+            width,
+            height,
             pixels: vec![Color::C0; num_pixels].into_boxed_slice(),
         };
     }
 
     /// Returns the string tag for this image (or empty string if it doesn't
     /// have one).
-    pub fn tag(&self) -> &str { &self.tag }
+    pub fn tag(&self) -> &str {
+        &self.tag
+    }
 
     /// Sets the string tag for this image.
     pub fn set_tag<S: Into<String>>(&mut self, tag: S) {
@@ -59,7 +61,9 @@ impl Image {
     }
 
     /// Returns the integer metadata for this image (if any).
-    pub fn metadata(&self) -> &[i16] { &self.metadata }
+    pub fn metadata(&self) -> &[i16] {
+        &self.metadata
+    }
 
     /// Sets the integer metadata for this image.
     pub fn set_metadata(&mut self, metadata: Vec<i16>) {
@@ -67,10 +71,14 @@ impl Image {
     }
 
     /// Returns the width of the image, in pixels.
-    pub fn width(&self) -> u32 { self.width }
+    pub fn width(&self) -> u32 {
+        self.width
+    }
 
     /// Returns the height of the image, in pixels.
-    pub fn height(&self) -> u32 { self.height }
+    pub fn height(&self) -> u32 {
+        self.height
+    }
 
     /// Returns a byte array containing RGBA-order data for the image pixels,
     /// in row-major order.
@@ -88,17 +96,11 @@ impl Image {
 
     /// Sets all pixels in the image to transparent.
     pub fn clear(&mut self) {
-        self.pixels = vec![Color::C0; self.pixels.len()]
-                          .into_boxed_slice();
+        self.pixels = vec![Color::C0; self.pixels.len()].into_boxed_slice();
     }
 
     /// Sets all pixels in the specified rectangle to the given color.
-    pub fn fill_rect(&mut self,
-                     x: i32,
-                     y: i32,
-                     w: u32,
-                     h: u32,
-                     color: Color) {
+    pub fn fill_rect(&mut self, x: i32, y: i32, w: u32, h: u32, color: Color) {
         let start_row = min(max(0, y) as u32, self.height);
         let end_row = min(max(0, y + h as i32) as u32, self.height);
         let start_col = min(max(0, x) as u32, self.width);
@@ -117,10 +119,10 @@ impl Image {
         let src_start_col = min(max(0, -x) as u32, src.width);
         let dest_start_row = min(max(0, y) as u32, self.height);
         let dest_start_col = min(max(0, x) as u32, self.width);
-        let num_rows = min(src.height - src_start_row,
-                           self.height - dest_start_row);
-        let num_cols = min(src.width - src_start_col,
-                           self.width - dest_start_col);
+        let num_rows =
+            min(src.height - src_start_row, self.height - dest_start_row);
+        let num_cols =
+            min(src.width - src_start_col, self.width - dest_start_col);
         for row in 0..num_rows {
             for col in 0..num_cols {
                 let color = src[(src_start_col + col, src_start_row + row)];
@@ -216,8 +218,11 @@ impl Image {
         new_image
     }
 
-    pub(crate) fn read<R: Read>(mut reader: R, width: u32, height: u32)
-                                -> io::Result<Image> {
+    pub(crate) fn read<R: Read>(
+        mut reader: R,
+        width: u32,
+        height: u32,
+    ) -> io::Result<Image> {
         let mut pixels = Vec::with_capacity((width * height) as usize);
         if width > 0 && height > 0 {
             let mut row_buffer = vec![0u8; width as usize];
@@ -232,8 +237,8 @@ impl Image {
         Ok(Image {
             tag: String::new(),
             metadata: Vec::new(),
-            width: width,
-            height: height,
+            width,
+            height,
             pixels: pixels.into_boxed_slice(),
         })
     }
@@ -286,9 +291,10 @@ mod tests {
         image[(0, 0)] = Color::C2;
         image[(0, 1)] = Color::C5;
         image[(1, 1)] = Color::Cd;
-        assert_eq!(image.rgba_data(Palette::default()),
-                   vec![127, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255, 0, 255,
-                        255, 255]);
+        assert_eq!(
+            image.rgba_data(Palette::default()),
+            vec![127, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255, 0, 255, 255, 255]
+        );
     }
 
     #[test]
@@ -351,12 +357,14 @@ mod tests {
         image.fill_rect(1, 1, 2, 2, Color::C3);
         let mut output = Vec::<u8>::new();
         image.write(&mut output).unwrap();
-        assert_eq!(&output as &[u8],
-                   b"00000\n\
+        assert_eq!(
+            &output as &[u8],
+            b"00000\n\
                      03300\n\
                      03300\n\
                      00000\n\
-                     00000\n" as &[u8]);
+                     00000\n" as &[u8]
+        );
     }
 
     #[test]
@@ -365,10 +373,12 @@ mod tests {
         image.fill_rect(2, 1, 7, 7, Color::C3);
         let mut output = Vec::<u8>::new();
         image.write(&mut output).unwrap();
-        assert_eq!(&output as &[u8],
-                   b"00000\n\
+        assert_eq!(
+            &output as &[u8],
+            b"00000\n\
                      00333\n\
-                     00333\n" as &[u8]);
+                     00333\n" as &[u8]
+        );
     }
 
     #[test]
@@ -384,10 +394,12 @@ mod tests {
         image1.draw(&image2, -1, 1);
         let mut output = Vec::<u8>::new();
         image1.write(&mut output).unwrap();
-        assert_eq!(&output as &[u8],
-                   b"EEEEE\n\
+        assert_eq!(
+            &output as &[u8],
+            b"EEEEE\n\
                      111EE\n\
-                     1E11E\n" as &[u8]);
+                     1E11E\n" as &[u8]
+        );
     }
 }
 

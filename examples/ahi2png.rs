@@ -14,14 +14,12 @@ fn convert_image(image: &ahi::Image, output_path: &Path) -> io::Result<()> {
         png::Encoder::new(output_file, image.width(), image.height());
     encoder.set(png::ColorType::RGBA).set(png::BitDepth::Eight);
     let mut writer = encoder.write_header()?;
-    writer.write_image_data(&rgba_data).map_err(
-        |err| match err {
-            png::EncodingError::IoError(err) => err,
-            png::EncodingError::Format(msg) => {
-                io::Error::new(io::ErrorKind::InvalidData, msg.into_owned())
-            }
-        },
-    )?;
+    writer.write_image_data(&rgba_data).map_err(|err| match err {
+        png::EncodingError::IoError(err) => err,
+        png::EncodingError::Format(msg) => {
+            io::Error::new(io::ErrorKind::InvalidData, msg.into_owned())
+        }
+    })?;
     Ok(())
 }
 
@@ -37,8 +35,10 @@ fn main() -> io::Result<()> {
     let input_file = File::open(&input_path)?;
     let collection = ahi::Collection::read(input_file)?;
     if collection.images.len() == 1 {
-        convert_image(&collection.images[0],
-                      &input_path.with_extension("png"))?;
+        convert_image(
+            &collection.images[0],
+            &input_path.with_extension("png"),
+        )?;
     } else {
         for (index, image) in collection.images.iter().enumerate() {
             let output_path =

@@ -19,8 +19,10 @@
 
 use internal::image::Image;
 use internal::palette::Palette;
-use internal::util::{read_exactly, read_header_uint, read_hex_u32,
-                     read_list_of_i16s, read_quoted_string};
+use internal::util::{
+    read_exactly, read_header_uint, read_hex_u32, read_list_of_i16s,
+    read_quoted_string,
+};
 use std::io::{self, Error, ErrorKind, Read, Write};
 
 // ========================================================================= //
@@ -92,10 +94,7 @@ pub struct Collection {
 impl Collection {
     /// Returns a new, empty collection.
     pub fn new() -> Collection {
-        Collection {
-            palettes: Vec::new(),
-            images: Vec::new(),
-        }
+        Collection { palettes: Vec::new(), images: Vec::new() }
     }
 
     /// Reads a collection from an AHI file.
@@ -180,10 +179,7 @@ impl Collection {
             images.push(image);
         }
 
-        Ok(Collection {
-            palettes: palettes,
-            images: images,
-        })
+        Ok(Collection { palettes, images })
     }
 
     /// Writes a collection to an AHI file, automatically choosing the lowest
@@ -192,8 +188,8 @@ impl Collection {
         let global_size = if self.images.is_empty() {
             Some((0, 0))
         } else {
-            let mut size = Some((self.images[0].width(),
-                                 self.images[0].height()));
+            let mut size =
+                Some((self.images[0].width(), self.images[0].height()));
             for image in self.images.iter() {
                 if Some((image.width(), image.height())) != size {
                     size = None;
@@ -216,8 +212,10 @@ impl Collection {
                 break;
             }
         }
-        let version = if self.palettes.is_empty() && global_size.is_some() &&
-            !has_string_tags && !has_metadata
+        let version = if self.palettes.is_empty()
+            && global_size.is_some()
+            && !has_string_tags
+            && !has_metadata
         {
             0
         } else {
@@ -225,11 +223,13 @@ impl Collection {
         };
         if version == 0 {
             let (width, height) = global_size.unwrap();
-            try!(write!(writer,
-                        "ahi0 w{} h{} n{}\n",
-                        width,
-                        height,
-                        self.images.len()));
+            try!(write!(
+                writer,
+                "ahi0 w{} h{} n{}\n",
+                width,
+                height,
+                self.images.len()
+            ));
         } else {
             let mut flags = 0;
             if global_size.is_none() {
@@ -241,11 +241,13 @@ impl Collection {
             if has_metadata {
                 flags |= FLAG_METADATA_INTS;
             }
-            write!(writer,
-                   "ahi1 f{:X} p{} i{}",
-                   flags,
-                   self.palettes.len(),
-                   self.images.len())?;
+            write!(
+                writer,
+                "ahi1 f{:X} p{} i{}",
+                flags,
+                self.palettes.len(),
+                self.images.len()
+            )?;
             if let Some((width, height)) = global_size {
                 write!(writer, " w{} h{}", width, height)?;
             }
@@ -262,8 +264,8 @@ impl Collection {
             if has_string_tags {
                 let mut escaped = String::new();
                 for chr in image.tag().chars() {
-                    escaped.push_str(
-                        &chr.escape_default().collect::<String>());
+                    escaped
+                        .push_str(&chr.escape_default().collect::<String>());
                 }
                 write!(writer, "\"{}\"\n", escaped)?;
             }
@@ -293,8 +295,8 @@ impl Collection {
 
 #[cfg(test)]
 mod tests {
-    use internal::color::Color;
     use super::*;
+    use internal::color::Color;
 
     #[test]
     fn read_empty_v0_collection() {
@@ -336,8 +338,10 @@ mod tests {
                              0E\n";
         let collection = Collection::read(input).unwrap();
         assert_eq!(collection.palettes.len(), 2);
-        assert_eq!(collection.palettes[0][Color::Ce],
-                   (0xee, 0xee, 0xee, 0xff));
+        assert_eq!(
+            collection.palettes[0][Color::Ce],
+            (0xee, 0xee, 0xee, 0xff)
+        );
         assert_eq!(collection.palettes[1][Color::Ce], (0xff, 0, 0xff, 0xff));
         assert_eq!(collection.images.len(), 1);
         assert_eq!(collection.images[0][(0, 0)], Color::Ce);
@@ -365,8 +369,7 @@ mod tests {
 
     #[test]
     fn read_v1_collection_with_some_images_empty() {
-        let input: &[u8] =
-            b"ahi1 f1 p0 i5\n\
+        let input: &[u8] = b"ahi1 f1 p0 i5\n\
               \n\
               w4 h1\n\
               0000\n\
@@ -396,8 +399,7 @@ mod tests {
 
     #[test]
     fn read_v1_collection_with_string_tags() {
-        let input: &[u8] =
-            b"ahi1 f2 p0 i2 w2 h1\n\
+        let input: &[u8] = b"ahi1 f2 p0 i2 w2 h1\n\
               \n\
               \"foo\"\n\
               00\n\
@@ -412,8 +414,7 @@ mod tests {
 
     #[test]
     fn read_v1_collection_with_metadata() {
-        let input: &[u8] =
-            b"ahi1 f4 p0 i2 w2 h1\n\
+        let input: &[u8] = b"ahi1 f4 p0 i2 w2 h1\n\
               \n\
               [1, -2, 3]\n\
               00\n\
@@ -428,8 +429,7 @@ mod tests {
 
     #[test]
     fn read_v1_collection_with_all_flags() {
-        let input: &[u8] =
-            b"ahi1 f7 p0 i2\n\
+        let input: &[u8] = b"ahi1 f7 p0 i2\n\
               \n\
               \"\"\n\
               [1, -2, 3]\n\
@@ -467,8 +467,7 @@ mod tests {
         collection.palettes.push(Palette::new([(0, 0, 0, 255); 16]));
         let mut output = Vec::<u8>::new();
         collection.write(&mut output).unwrap();
-        let expected: &[u8] =
-            b"ahi1 f0 p2 i0 w0 h0\n\
+        let expected: &[u8] = b"ahi1 f0 p2 i0 w0 h0\n\
               \n\
               ;0;7F0000;F00;007F00;0F0;7F7F00;FF0;00007F;00F;\
               7F007F;F0F;007F7F;0FF;7F;F\n\
@@ -490,14 +489,16 @@ mod tests {
         collection.images.push(image1);
         let mut output = Vec::<u8>::new();
         collection.write(&mut output).unwrap();
-        assert_eq!(&output as &[u8],
-                   b"ahi0 w2 h2 n2\n\
+        assert_eq!(
+            &output as &[u8],
+            b"ahi0 w2 h2 n2\n\
                      \n\
                      20\n\
                      5D\n\
                      \n\
                      E0\n\
-                     0E\n");
+                     0E\n"
+        );
     }
 
     #[test]
@@ -507,8 +508,7 @@ mod tests {
         collection.images.push(Image::new(1, 3));
         let mut output = Vec::<u8>::new();
         collection.write(&mut output).unwrap();
-        let expected: &[u8] =
-            b"ahi1 f1 p0 i2\n\
+        let expected: &[u8] = b"ahi1 f1 p0 i2\n\
               \n\
               w4 h2\n\
               0000\n\
@@ -531,8 +531,7 @@ mod tests {
         collection.images.push(Image::new(2, 1));
         let mut output = Vec::<u8>::new();
         collection.write(&mut output).unwrap();
-        let expected: &[u8] =
-            b"ahi1 f1 p0 i5\n\
+        let expected: &[u8] = b"ahi1 f1 p0 i5\n\
               \n\
               w4 h1\n\
               0000\n\
@@ -558,8 +557,7 @@ mod tests {
         collection.images[1].set_tag("Snowman\u{2603}");
         let mut output = Vec::<u8>::new();
         collection.write(&mut output).unwrap();
-        let expected: &[u8] =
-            b"ahi1 f2 p0 i2 w2 h1\n\
+        let expected: &[u8] = b"ahi1 f2 p0 i2 w2 h1\n\
               \n\
               \"foo\"\n\
               00\n\
@@ -578,8 +576,7 @@ mod tests {
         collection.images[1].set_metadata(vec![4, 5]);
         let mut output = Vec::<u8>::new();
         collection.write(&mut output).unwrap();
-        let expected: &[u8] =
-            b"ahi1 f4 p0 i2 w2 h1\n\
+        let expected: &[u8] = b"ahi1 f4 p0 i2 w2 h1\n\
               \n\
               [1, -2, 3]\n\
               00\n\
@@ -598,8 +595,7 @@ mod tests {
         collection.images[1].set_tag("foobar");
         let mut output = Vec::<u8>::new();
         collection.write(&mut output).unwrap();
-        let expected: &[u8] =
-            b"ahi1 f7 p0 i2\n\
+        let expected: &[u8] = b"ahi1 f7 p0 i2\n\
               \n\
               \"\"\n\
               [1, -2, 3]\n\

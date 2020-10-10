@@ -27,8 +27,10 @@ const MAX_HEADER_VALUE: i32 = 0xFFFF;
 
 // ========================================================================= //
 
-fn read_char_escape<R: Read>(mut reader: R, quote: u8)
-                             -> io::Result<Option<char>> {
+fn read_char_escape<R: Read>(
+    mut reader: R,
+    quote: u8,
+) -> io::Result<Option<char>> {
     let mut buffer = vec![0u8];
     try!(reader.read_exact(&mut buffer));
     let byte = buffer[0];
@@ -52,10 +54,12 @@ fn read_char_escape<R: Read>(mut reader: R, quote: u8)
         } else if esc == b'u' {
             try!(read_exactly(reader.by_ref(), b"{"));
             let value = try!(read_hex_u32(reader.by_ref(), b'}'));
-            char::from_u32(value).ok_or_else(|| {
-                let msg = format!("invalid unicode value: {}", value);
-                Error::new(ErrorKind::InvalidData, msg)
-            }).map(Some)
+            char::from_u32(value)
+                .ok_or_else(|| {
+                    let msg = format!("invalid unicode value: {}", value);
+                    Error::new(ErrorKind::InvalidData, msg)
+                })
+                .map(Some)
         } else {
             let msg = format!("invalid char escape: {}", esc);
             Err(Error::new(ErrorKind::InvalidData, msg))
@@ -68,22 +72,28 @@ fn read_char_escape<R: Read>(mut reader: R, quote: u8)
     }
 }
 
-pub(crate) fn read_exactly<R: Read>(mut reader: R, expected: &[u8])
-                                    -> io::Result<()> {
+pub(crate) fn read_exactly<R: Read>(
+    mut reader: R,
+    expected: &[u8],
+) -> io::Result<()> {
     let mut actual = vec![0u8; expected.len()];
     try!(reader.read_exact(&mut actual));
     if &actual as &[u8] != expected {
-        let msg = format!("expected '{}', found '{}'",
-                          String::from_utf8_lossy(expected),
-                          String::from_utf8_lossy(&actual));
+        let msg = format!(
+            "expected '{}', found '{}'",
+            String::from_utf8_lossy(expected),
+            String::from_utf8_lossy(&actual)
+        );
         Err(Error::new(ErrorKind::InvalidData, msg))
     } else {
         Ok(())
     }
 }
 
-pub(crate) fn read_header_int<R: Read>(reader: R, terminator: u8)
-                                       -> io::Result<i32> {
+pub(crate) fn read_header_int<R: Read>(
+    reader: R,
+    terminator: u8,
+) -> io::Result<i32> {
     let mut negative = false;
     let mut any_digits = false;
     let mut value: i32 = 0;
@@ -102,8 +112,10 @@ pub(crate) fn read_header_int<R: Read>(reader: R, terminator: u8)
             }
             negative = true;
         } else if byte < b'0' || byte > b'9' {
-            let msg = format!("invalid byte in header field: '{}'",
-                              String::from_utf8_lossy(&[byte]));
+            let msg = format!(
+                "invalid byte in header field: '{}'",
+                String::from_utf8_lossy(&[byte])
+            );
             return Err(Error::new(ErrorKind::InvalidData, msg));
         } else {
             value = value * 10 + (byte - b'0') as i32;
@@ -120,8 +132,10 @@ pub(crate) fn read_header_int<R: Read>(reader: R, terminator: u8)
     Ok(value)
 }
 
-pub(crate) fn read_header_uint<R: Read>(reader: R, terminator: u8)
-                                        -> io::Result<u32> {
+pub(crate) fn read_header_uint<R: Read>(
+    reader: R,
+    terminator: u8,
+) -> io::Result<u32> {
     let value = try!(read_header_int(reader, terminator));
     if value < 0 {
         let msg = format!("value must be nonnegative (was {})", value);
@@ -130,8 +144,10 @@ pub(crate) fn read_header_uint<R: Read>(reader: R, terminator: u8)
     Ok(value as u32)
 }
 
-pub(crate) fn read_hex_digits<R: Read>(reader: R, terminator: u8)
-                                       -> io::Result<Vec<u8>> {
+pub(crate) fn read_hex_digits<R: Read>(
+    reader: R,
+    terminator: u8,
+) -> io::Result<Vec<u8>> {
     let mut digits = Vec::<u8>::new();
     for next in reader.bytes() {
         let byte = next?;
@@ -145,8 +161,10 @@ pub(crate) fn read_hex_digits<R: Read>(reader: R, terminator: u8)
         } else if byte >= b'A' && byte <= b'F' {
             byte - b'A' + 0xA
         } else {
-            let msg = format!("invalid hex digit: '{}'",
-                              String::from_utf8_lossy(&[byte]));
+            let msg = format!(
+                "invalid hex digit: '{}'",
+                String::from_utf8_lossy(&[byte])
+            );
             return Err(Error::new(ErrorKind::InvalidData, msg));
         };
         digits.push(digit as u8);
@@ -154,8 +172,10 @@ pub(crate) fn read_hex_digits<R: Read>(reader: R, terminator: u8)
     Ok(digits)
 }
 
-pub(crate) fn read_hex_u32<R: Read>(reader: R, terminator: u8)
-                                    -> io::Result<u32> {
+pub(crate) fn read_hex_u32<R: Read>(
+    reader: R,
+    terminator: u8,
+) -> io::Result<u32> {
     let digits = read_hex_digits(reader, terminator)?;
     if digits.is_empty() {
         let msg = "missing hex literal";
@@ -172,8 +192,9 @@ pub(crate) fn read_hex_u32<R: Read>(reader: R, terminator: u8)
     Ok(value)
 }
 
-pub(crate) fn read_list_of_i16s<R: Read>(mut reader: R)
-                                         -> io::Result<Vec<i16>> {
+pub(crate) fn read_list_of_i16s<R: Read>(
+    mut reader: R,
+) -> io::Result<Vec<i16>> {
     read_exactly(reader.by_ref(), b"[")?;
     let mut values = Vec::<i16>::new();
     let mut done = false;
@@ -199,8 +220,10 @@ pub(crate) fn read_list_of_i16s<R: Read>(mut reader: R)
                 }
                 negative = true;
             } else if byte < b'0' || byte > b'9' {
-                let msg = format!("invalid byte in list integer: '{}'",
-                                  String::from_utf8_lossy(&[byte]));
+                let msg = format!(
+                    "invalid byte in list integer: '{}'",
+                    String::from_utf8_lossy(&[byte])
+                );
                 return Err(Error::new(ErrorKind::InvalidData, msg));
             } else {
                 value = value * 10 + (byte - b'0') as i32;
@@ -240,8 +263,9 @@ pub(crate) fn read_quoted_char<R: Read>(mut reader: R) -> io::Result<char> {
     }
 }
 
-pub(crate) fn read_quoted_string<R: Read>(mut reader: R)
-                                          -> io::Result<String> {
+pub(crate) fn read_quoted_string<R: Read>(
+    mut reader: R,
+) -> io::Result<String> {
     read_exactly(reader.by_ref(), b"\"")?;
     let mut string = String::new();
     while let Some(chr) = read_char_escape(reader.by_ref(), b'"')? {

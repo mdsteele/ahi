@@ -32,10 +32,14 @@ pub struct Palette {
 
 impl Palette {
     /// Creates a new Palette from the given RGBA data.
-    pub fn new(rgba: [(u8, u8, u8, u8); 16]) -> Palette { Palette { rgba } }
+    pub fn new(rgba: [(u8, u8, u8, u8); 16]) -> Palette {
+        Palette { rgba }
+    }
 
     /// Returns a reference to the default palette.
-    pub fn default() -> &'static Palette { &DEFAULT_PALETTE }
+    pub fn default() -> &'static Palette {
+        &DEFAULT_PALETTE
+    }
 
     pub(crate) fn read<R: Read>(mut reader: R) -> io::Result<Palette> {
         let mut palette = Palette::new([(0u8, 0u8, 0u8, 0u8); 16]);
@@ -55,32 +59,36 @@ impl Palette {
                 3 => {
                     (digits[0] * 0x11, digits[1] * 0x11, digits[2] * 0x11, 255)
                 }
-                4 => {
-                    (digits[0] * 0x11, digits[1] * 0x11, digits[2] * 0x11,
-                     digits[3] * 0x11)
-                }
-                5 => {
-                    (digits[0] * 0x11, digits[1] * 0x11, digits[2] * 0x11,
-                     digits[3] * 0x10 + digits[4])
-                }
-                6 => {
-                    (digits[0] * 0x10 + digits[1],
-                     digits[2] * 0x10 + digits[3],
-                     digits[4] * 0x10 + digits[5],
-                     255)
-                }
-                7 => {
-                    (digits[0] * 0x10 + digits[1],
-                     digits[2] * 0x10 + digits[3],
-                     digits[4] * 0x10 + digits[5],
-                     digits[6] * 0x11)
-                }
-                8 => {
-                    (digits[0] * 0x10 + digits[1],
-                     digits[2] * 0x10 + digits[3],
-                     digits[4] * 0x10 + digits[5],
-                     digits[6] * 0x10 + digits[7])
-                }
+                4 => (
+                    digits[0] * 0x11,
+                    digits[1] * 0x11,
+                    digits[2] * 0x11,
+                    digits[3] * 0x11,
+                ),
+                5 => (
+                    digits[0] * 0x11,
+                    digits[1] * 0x11,
+                    digits[2] * 0x11,
+                    digits[3] * 0x10 + digits[4],
+                ),
+                6 => (
+                    digits[0] * 0x10 + digits[1],
+                    digits[2] * 0x10 + digits[3],
+                    digits[4] * 0x10 + digits[5],
+                    255,
+                ),
+                7 => (
+                    digits[0] * 0x10 + digits[1],
+                    digits[2] * 0x10 + digits[3],
+                    digits[4] * 0x10 + digits[5],
+                    digits[6] * 0x11,
+                ),
+                8 => (
+                    digits[0] * 0x10 + digits[1],
+                    digits[2] * 0x10 + digits[3],
+                    digits[4] * 0x10 + digits[5],
+                    digits[6] * 0x10 + digits[7],
+                ),
                 _ => {
                     let msg = "too many digits in palette color";
                     return Err(Error::new(ErrorKind::InvalidData, msg));
@@ -103,24 +111,47 @@ impl Palette {
                     }
                 } else {
                     if r % 0x11 == 0 && g % 0x11 == 0 && b % 0x11 == 0 {
-                        write!(writer, "{:01X}{:01X}{:01X}",
-                               r / 0x11, g / 0x11, b / 0x11)?;
+                        write!(
+                            writer,
+                            "{:01X}{:01X}{:01X}",
+                            r / 0x11,
+                            g / 0x11,
+                            b / 0x11
+                        )?;
                     } else {
                         write!(writer, "{:02X}{:02X}{:02X}", r, g, b)?;
                     }
                 }
             } else if a % 0x11 == 0 {
                 if r % 0x11 == 0 && g % 0x11 == 0 && b % 0x11 == 0 {
-                    write!(writer, "{:01X}{:01X}{:01X}{:01X}",
-                           r / 0x11, g / 0x11, b / 0x11, a / 0x11)?;
+                    write!(
+                        writer,
+                        "{:01X}{:01X}{:01X}{:01X}",
+                        r / 0x11,
+                        g / 0x11,
+                        b / 0x11,
+                        a / 0x11
+                    )?;
                 } else {
-                    write!(writer, "{:02X}{:02X}{:02X}{:01X}",
-                           r, g, b, a / 0x11)?;
+                    write!(
+                        writer,
+                        "{:02X}{:02X}{:02X}{:01X}",
+                        r,
+                        g,
+                        b,
+                        a / 0x11
+                    )?;
                 }
             } else {
                 if r % 0x11 == 0 && g % 0x11 == 0 && b % 0x11 == 0 {
-                    write!(writer, "{:01X}{:01X}{:01X}{:02X}",
-                           r / 0x11, g / 0x11, b / 0x11, a)?;
+                    write!(
+                        writer,
+                        "{:01X}{:01X}{:01X}{:02X}",
+                        r / 0x11,
+                        g / 0x11,
+                        b / 0x11,
+                        a
+                    )?;
                 } else {
                     write!(writer, "{:02X}{:02X}{:02X}{:02X}", r, g, b, a)?;
                 }

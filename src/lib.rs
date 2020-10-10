@@ -131,9 +131,10 @@ pub use internal::collect::Collection;
 pub use internal::color::Color;
 pub use internal::image::Image;
 pub use internal::palette::Palette;
-use internal::util::{read_exactly, read_header_int, read_header_uint,
-                     read_quoted_char};
-use std::collections::{BTreeMap, btree_map};
+use internal::util::{
+    read_exactly, read_header_int, read_header_uint, read_quoted_char,
+};
+use std::collections::{btree_map, BTreeMap};
 use std::io::{self, Error, ErrorKind, Read, Write};
 use std::ops::Deref;
 use std::rc::Rc;
@@ -154,11 +155,7 @@ pub struct Glyph {
 impl Glyph {
     /// Creates a new glyph with the given image and left/right edges.
     pub fn new(image: Image, left: i32, right: i32) -> Glyph {
-        Glyph {
-            image: image,
-            left: left,
-            right: right,
-        }
+        Glyph { image, left, right }
     }
 
     /// Returns the image for this glyph.
@@ -323,11 +320,7 @@ impl Font {
             let glyph = try!(Font::read_glyph(reader.by_ref(), height));
             glyphs.insert(chr, Rc::new(glyph));
         }
-        Ok(Font {
-            glyphs: glyphs,
-            default_glyph: Rc::new(default_glyph),
-            baseline: baseline,
-        })
+        Ok(Font { glyphs, default_glyph: Rc::new(default_glyph), baseline })
     }
 
     fn read_glyph<R: Read>(mut reader: R, height: u32) -> io::Result<Glyph> {
@@ -349,25 +342,23 @@ impl Font {
         let image = Image {
             tag: String::new(),
             metadata: Vec::new(),
-            width: width,
-            height: height,
+            width,
+            height,
             pixels: pixels.into_boxed_slice(),
         };
-        Ok(Glyph {
-            image: image,
-            left: left,
-            right: right,
-        })
+        Ok(Glyph { image, left, right })
     }
 
     /// Writes the font to an AHF file.
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         let height = self.glyph_height();
-        try!(write!(writer,
-                    "ahf0 h{} b{} n{}\n",
-                    height,
-                    self.baseline(),
-                    self.glyphs.len()));
+        try!(write!(
+            writer,
+            "ahf0 h{} b{} n{}\n",
+            height,
+            self.baseline(),
+            self.glyphs.len()
+        ));
         try!(write!(writer, "\ndef "));
         try!(Font::write_glyph(writer.by_ref(), &self.default_glyph));
         for (chr, glyph) in self.glyphs.iter() {
@@ -382,11 +373,13 @@ impl Font {
         let image = glyph.image();
         let width = image.width();
         let height = image.height();
-        try!(write!(writer,
-                    "w{} l{} r{}\n",
-                    width,
-                    glyph.left_edge(),
-                    glyph.right_edge()));
+        try!(write!(
+            writer,
+            "w{} l{} r{}\n",
+            width,
+            glyph.left_edge(),
+            glyph.right_edge()
+        ));
         for row in 0..height {
             for col in 0..width {
                 let color = image[(col, row)];
@@ -502,7 +495,8 @@ mod tests {
         let mut output = Vec::<u8>::new();
         font.write(&mut output).expect("failed to write font");
         let mut expected = Vec::<u8>::new();
-        expected.extend_from_slice(b"ahf0 h3 b2 n2\n\
+        expected.extend_from_slice(
+            b"ahf0 h3 b2 n2\n\
             \n\
             def w3 l0 r4\n\
             101\n\
@@ -517,7 +511,8 @@ mod tests {
             '\\u{2603}' w2 l0 r4\n\
             11\n\
             11\n\
-            00\n");
+            00\n",
+        );
         assert_eq!(output, expected);
     }
 }

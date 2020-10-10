@@ -99,8 +99,10 @@ impl Color {
             b'E' => Ok(Color::Ce),
             b'F' => Ok(Color::Cf),
             _ => {
-                let msg = format!("invalid pixel character: '{}'",
-                                  String::from_utf8_lossy(&[byte]));
+                let msg = format!(
+                    "invalid pixel character: '{}'",
+                    String::from_utf8_lossy(&[byte])
+                );
                 Err(Error::new(ErrorKind::InvalidData, msg))
             }
         }
