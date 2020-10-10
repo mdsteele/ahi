@@ -17,8 +17,8 @@
 // | with AHI.  If not, see <http://www.gnu.org/licenses/>.                   |
 // +--------------------------------------------------------------------------+
 
-use internal::color::Color;
-use internal::util;
+use crate::internal::color::Color;
+use crate::internal::util;
 use std::io::{self, Error, ErrorKind, Read, Write};
 use std::ops::{Index, IndexMut};
 

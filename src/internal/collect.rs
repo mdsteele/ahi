@@ -17,9 +17,9 @@
 // | with AHI.  If not, see <http://www.gnu.org/licenses/>.                   |
 // +--------------------------------------------------------------------------+
 
-use internal::image::Image;
-use internal::palette::Palette;
-use internal::util::{
+use crate::internal::image::Image;
+use crate::internal::palette::Palette;
+use crate::internal::util::{
     read_exactly, read_header_uint, read_hex_u32, read_list_of_i16s,
     read_quoted_string,
 };
@@ -99,8 +99,8 @@ impl Collection {
 
     /// Reads a collection from an AHI file.
     pub fn read<R: Read>(mut reader: R) -> io::Result<Collection> {
-        try!(read_exactly(reader.by_ref(), b"ahi"));
-        let version = try!(read_header_uint(reader.by_ref(), b' '));
+        read_exactly(reader.by_ref(), b"ahi")?;
+        let version = read_header_uint(reader.by_ref(), b' ')?;
         if version != 0 && version != 1 {
             let msg = format!("unsupported AHI version: {}", version);
             return Err(Error::new(ErrorKind::InvalidData, msg));
@@ -118,12 +118,12 @@ impl Collection {
             0
         };
         let (num_images, global_width, global_height) = if version == 0 {
-            try!(read_exactly(reader.by_ref(), b"w"));
-            let width = try!(read_header_uint(reader.by_ref(), b' '));
-            try!(read_exactly(reader.by_ref(), b"h"));
-            let height = try!(read_header_uint(reader.by_ref(), b' '));
-            try!(read_exactly(reader.by_ref(), b"n"));
-            let num_images = try!(read_header_uint(reader.by_ref(), b'\n'));
+            read_exactly(reader.by_ref(), b"w")?;
+            let width = read_header_uint(reader.by_ref(), b' ')?;
+            read_exactly(reader.by_ref(), b"h")?;
+            let height = read_header_uint(reader.by_ref(), b' ')?;
+            read_exactly(reader.by_ref(), b"n")?;
+            let num_images = read_header_uint(reader.by_ref(), b'\n')?;
             (num_images as usize, width, height)
         } else if flags & FLAG_INDIVIDUAL_DIMENSIONS != 0 {
             read_exactly(reader.by_ref(), b"i")?;
@@ -165,10 +165,10 @@ impl Collection {
                 Vec::new()
             };
             let (width, height) = if flags & FLAG_INDIVIDUAL_DIMENSIONS != 0 {
-                try!(read_exactly(reader.by_ref(), b"w"));
-                let width = try!(read_header_uint(reader.by_ref(), b' '));
-                try!(read_exactly(reader.by_ref(), b"h"));
-                let height = try!(read_header_uint(reader.by_ref(), b'\n'));
+                read_exactly(reader.by_ref(), b"w")?;
+                let width = read_header_uint(reader.by_ref(), b' ')?;
+                read_exactly(reader.by_ref(), b"h")?;
+                let height = read_header_uint(reader.by_ref(), b'\n')?;
                 (width, height)
             } else {
                 (global_width, global_height)
@@ -223,13 +223,13 @@ impl Collection {
         };
         if version == 0 {
             let (width, height) = global_size.unwrap();
-            try!(write!(
+            write!(
                 writer,
                 "ahi0 w{} h{} n{}\n",
                 width,
                 height,
                 self.images.len()
-            ));
+            )?;
         } else {
             let mut flags = 0;
             if global_size.is_none() {
@@ -260,7 +260,7 @@ impl Collection {
             }
         }
         for image in self.images.iter() {
-            try!(write!(writer, "\n"));
+            write!(writer, "\n")?;
             if has_string_tags {
                 let mut escaped = String::new();
                 for chr in image.tag().chars() {
@@ -296,7 +296,7 @@ impl Collection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use internal::color::Color;
+    use crate::internal::color::Color;
 
     #[test]
     fn read_empty_v0_collection() {

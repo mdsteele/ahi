@@ -32,12 +32,12 @@ fn read_char_escape<R: Read>(
     quote: u8,
 ) -> io::Result<Option<char>> {
     let mut buffer = vec![0u8];
-    try!(reader.read_exact(&mut buffer));
+    reader.read_exact(&mut buffer)?;
     let byte = buffer[0];
     if byte == quote {
         Ok(None)
     } else if byte == b'\\' {
-        try!(reader.read_exact(&mut buffer));
+        reader.read_exact(&mut buffer)?;
         let esc = buffer[0];
         if esc == b'\\' {
             Ok(Some('\\'))
@@ -52,8 +52,8 @@ fn read_char_escape<R: Read>(
         } else if esc == b't' {
             Ok(Some('\t'))
         } else if esc == b'u' {
-            try!(read_exactly(reader.by_ref(), b"{"));
-            let value = try!(read_hex_u32(reader.by_ref(), b'}'));
+            read_exactly(reader.by_ref(), b"{")?;
+            let value = read_hex_u32(reader.by_ref(), b'}')?;
             char::from_u32(value)
                 .ok_or_else(|| {
                     let msg = format!("invalid unicode value: {}", value);
@@ -77,7 +77,7 @@ pub(crate) fn read_exactly<R: Read>(
     expected: &[u8],
 ) -> io::Result<()> {
     let mut actual = vec![0u8; expected.len()];
-    try!(reader.read_exact(&mut actual));
+    reader.read_exact(&mut actual)?;
     if &actual as &[u8] != expected {
         let msg = format!(
             "expected '{}', found '{}'",
@@ -98,7 +98,7 @@ pub(crate) fn read_header_int<R: Read>(
     let mut any_digits = false;
     let mut value: i32 = 0;
     for next in reader.bytes() {
-        let byte = try!(next);
+        let byte = next?;
         if byte == terminator {
             if !any_digits {
                 let msg = "missing integer field in header";
@@ -136,7 +136,7 @@ pub(crate) fn read_header_uint<R: Read>(
     reader: R,
     terminator: u8,
 ) -> io::Result<u32> {
-    let value = try!(read_header_int(reader, terminator));
+    let value = read_header_int(reader, terminator)?;
     if value < 0 {
         let msg = format!("value must be nonnegative (was {})", value);
         return Err(Error::new(ErrorKind::InvalidData, msg));

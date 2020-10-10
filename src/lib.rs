@@ -127,11 +127,11 @@
 
 mod internal;
 
-pub use internal::collect::Collection;
-pub use internal::color::Color;
-pub use internal::image::Image;
-pub use internal::palette::Palette;
-use internal::util::{
+pub use crate::internal::collect::Collection;
+pub use crate::internal::color::Color;
+pub use crate::internal::image::Image;
+pub use crate::internal::palette::Palette;
+use crate::internal::util::{
     read_exactly, read_header_int, read_header_uint, read_quoted_char,
 };
 use std::collections::{btree_map, BTreeMap};
@@ -296,48 +296,48 @@ impl Font {
 
     /// Reads a font from an AHF file.
     pub fn read<R: Read>(mut reader: R) -> io::Result<Font> {
-        try!(read_exactly(reader.by_ref(), b"ahf"));
-        let version = try!(read_header_uint(reader.by_ref(), b' '));
+        read_exactly(reader.by_ref(), b"ahf")?;
+        let version = read_header_uint(reader.by_ref(), b' ')?;
         if version != 0 {
             let msg = format!("unsupported AHF version: {}", version);
             return Err(Error::new(ErrorKind::InvalidData, msg));
         }
-        try!(read_exactly(reader.by_ref(), b"h"));
-        let height = try!(read_header_uint(reader.by_ref(), b' '));
-        try!(read_exactly(reader.by_ref(), b"b"));
-        let baseline = try!(read_header_int(reader.by_ref(), b' '));
-        try!(read_exactly(reader.by_ref(), b"n"));
-        let num_glyphs = try!(read_header_uint(reader.by_ref(), b'\n'));
+        read_exactly(reader.by_ref(), b"h")?;
+        let height = read_header_uint(reader.by_ref(), b' ')?;
+        read_exactly(reader.by_ref(), b"b")?;
+        let baseline = read_header_int(reader.by_ref(), b' ')?;
+        read_exactly(reader.by_ref(), b"n")?;
+        let num_glyphs = read_header_uint(reader.by_ref(), b'\n')?;
 
-        try!(read_exactly(reader.by_ref(), b"\ndef "));
-        let default_glyph = try!(Font::read_glyph(reader.by_ref(), height));
+        read_exactly(reader.by_ref(), b"\ndef ")?;
+        let default_glyph = Font::read_glyph(reader.by_ref(), height)?;
 
         let mut glyphs = BTreeMap::new();
         for _ in 0..num_glyphs {
-            try!(read_exactly(reader.by_ref(), b"\n"));
-            let chr = try!(read_quoted_char(reader.by_ref()));
-            try!(read_exactly(reader.by_ref(), b" "));
-            let glyph = try!(Font::read_glyph(reader.by_ref(), height));
+            read_exactly(reader.by_ref(), b"\n")?;
+            let chr = read_quoted_char(reader.by_ref())?;
+            read_exactly(reader.by_ref(), b" ")?;
+            let glyph = Font::read_glyph(reader.by_ref(), height)?;
             glyphs.insert(chr, Rc::new(glyph));
         }
         Ok(Font { glyphs, default_glyph: Rc::new(default_glyph), baseline })
     }
 
     fn read_glyph<R: Read>(mut reader: R, height: u32) -> io::Result<Glyph> {
-        try!(read_exactly(reader.by_ref(), b"w"));
-        let width = try!(read_header_uint(reader.by_ref(), b' '));
-        try!(read_exactly(reader.by_ref(), b"l"));
-        let left = try!(read_header_int(reader.by_ref(), b' '));
-        try!(read_exactly(reader.by_ref(), b"r"));
-        let right = try!(read_header_int(reader.by_ref(), b'\n'));
+        read_exactly(reader.by_ref(), b"w")?;
+        let width = read_header_uint(reader.by_ref(), b' ')?;
+        read_exactly(reader.by_ref(), b"l")?;
+        let left = read_header_int(reader.by_ref(), b' ')?;
+        read_exactly(reader.by_ref(), b"r")?;
+        let right = read_header_int(reader.by_ref(), b'\n')?;
         let mut row_buffer = vec![0u8; width as usize];
         let mut pixels = Vec::with_capacity((width * height) as usize);
         for _ in 0..height {
-            try!(reader.read_exact(&mut row_buffer));
+            reader.read_exact(&mut row_buffer)?;
             for &byte in &row_buffer {
-                pixels.push(try!(Color::from_byte(byte)));
+                pixels.push(Color::from_byte(byte)?);
             }
-            try!(read_exactly(reader.by_ref(), b"\n"));
+            read_exactly(reader.by_ref(), b"\n")?;
         }
         let image = Image {
             tag: String::new(),
@@ -352,19 +352,19 @@ impl Font {
     /// Writes the font to an AHF file.
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         let height = self.glyph_height();
-        try!(write!(
+        write!(
             writer,
             "ahf0 h{} b{} n{}\n",
             height,
             self.baseline(),
             self.glyphs.len()
-        ));
-        try!(write!(writer, "\ndef "));
-        try!(Font::write_glyph(writer.by_ref(), &self.default_glyph));
+        )?;
+        write!(writer, "\ndef ")?;
+        Font::write_glyph(writer.by_ref(), &self.default_glyph)?;
         for (chr, glyph) in self.glyphs.iter() {
             let escaped: String = chr.escape_default().collect();
-            try!(write!(writer, "\n'{}' ", escaped));
-            try!(Font::write_glyph(writer.by_ref(), glyph));
+            write!(writer, "\n'{}' ", escaped)?;
+            Font::write_glyph(writer.by_ref(), glyph)?;
         }
         Ok(())
     }
@@ -373,19 +373,19 @@ impl Font {
         let image = glyph.image();
         let width = image.width();
         let height = image.height();
-        try!(write!(
+        write!(
             writer,
             "w{} l{} r{}\n",
             width,
             glyph.left_edge(),
             glyph.right_edge()
-        ));
+        )?;
         for row in 0..height {
             for col in 0..width {
                 let color = image[(col, row)];
-                try!(writer.write_all(&[color.to_byte()]));
+                writer.write_all(&[color.to_byte()])?;
             }
-            try!(write!(writer, "\n"));
+            write!(writer, "\n")?;
         }
         Ok(())
     }

@@ -17,9 +17,9 @@
 // | with AHI.  If not, see <http://www.gnu.org/licenses/>.                   |
 // +--------------------------------------------------------------------------+
 
-use internal::color::Color;
-use internal::palette::Palette;
-use internal::util;
+use crate::internal::color::Color;
+use crate::internal::palette::Palette;
+use crate::internal::util;
 use std::cmp::{max, min};
 use std::io::{self, Read, Write};
 use std::ops::{Index, IndexMut};
